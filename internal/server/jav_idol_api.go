@@ -398,6 +398,11 @@ func enrichJavIdolSummary(ctx context.Context, item *dbpkg.JavIdolSummary, cover
 		}
 		return
 	}
+	// [FORK] 有本地独立头像（Gfriends）的女优，直接保留虚拟头像码，
+	// 不要被下面的「退回某部作品封面」逻辑覆盖掉。
+	if hasIdolAvatarFile(ctx, item.ID) {
+		return
+	}
 	if item.CoverCode != "" {
 		if _, ok := manager.FindCoverPath(coverDir, item.CoverCode); ok {
 			return

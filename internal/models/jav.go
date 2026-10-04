@@ -167,6 +167,9 @@ type JavIdol struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 	CoverJavID    *int64     `json:"cover_jav_id" gorm:"index"`
 	CoverCropLeft float64    `json:"cover_crop_left" gorm:"not null;default:0.53"`
+	// [FORK] 独立头像：avatar_code 是前端拼 /jav/:code/cover 的虚拟码，avatar_file 是本地头像文件
+	AvatarCode *string `json:"avatar_code" gorm:"index"`
+	AvatarFile *string `json:"avatar_file"`
 }
 
 type JavIdolAlias struct {
