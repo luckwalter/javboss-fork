@@ -195,26 +195,73 @@ func isRealMediaHeader(buf []byte) bool {
 	return bytes.HasPrefix(buf, []byte(".RMF"))
 }
 
+// ErrFFToolMissing 标识「容器内缺少 ffmpeg/ffprobe 可执行文件」。
+// 这类错误的底层链同样满足 errors.Is(err, fs.ErrNotExist)（stat 失败），
+// 若不单独识别，上层会把「工具缺失」误报成「视频文件或所在目录不存在」。
+var ErrFFToolMissing = errors.New("ff tool missing")
+
 var (
-	ffprobeOnce sync.Once
-	ffprobePath string
-	ffprobeErr  error
+	ffprobeMu       sync.Mutex
+	ffprobePath     string
+	ffprobeResolved bool
 )
 
-// ContainerFFBinaryDir is the only location used for FFmpeg tools in Docker.
+// ContainerFFBinaryDir is the primary (current image) location for FFmpeg tools in Docker.
 const ContainerFFBinaryDir = "/app/internal/bin"
 
-// ResolveFFprobePath resolves the ffprobe binary location.
-func ResolveFFprobePath() (string, error) {
-	ffprobeOnce.Do(func() {
-		ffprobePath, ffprobeErr = findFFprobePath()
-	})
-	return ffprobePath, ffprobeErr
+// containerFFBinaryFallbackDirs 兼容历史镜像布局：v2.1.0 的 Dockerfile 把
+// ffmpeg/ffprobe 放在 /usr/local/bin，v2.1.1 起改为 /app/internal/bin。
+var containerFFBinaryFallbackDirs = []string{
+	"/usr/local/bin",
 }
 
-// ResolveFFmpegPath uses only the fixed image path in Docker. Native installations
-// use tool downloads, with a bundled executable also supported on macOS.
-// Release builds resolve paths only relative to the executable directory.
+// ResolveFFprobePath resolves the ffprobe binary location.
+// 只在解析成功时缓存：失败结果不再被永久记住，工具补齐后无需重启进程即可恢复。
+func ResolveFFprobePath() (string, error) {
+	ffprobeMu.Lock()
+	defer ffprobeMu.Unlock()
+	if ffprobeResolved {
+		return ffprobePath, nil
+	}
+	path, err := findFFprobePath()
+	if err != nil {
+		return "", err
+	}
+	ffprobePath, ffprobeResolved = path, true
+	return path, nil
+}
+
+// ResetFFprobePathCache 使下一次 ResolveFFprobePath 重新探测。
+// 供「安装/下载 FFmpeg 工具之后」主动失效缓存。
+func ResetFFprobePathCache() {
+	ffprobeMu.Lock()
+	ffprobePath, ffprobeResolved = "", false
+	ffprobeMu.Unlock()
+}
+
+// IsContainerFFBinaryPath 判断给定路径是否位于容器内的 FFmpeg 工具目录
+// （当前布局 /app/internal/bin，或历史布局 /usr/local/bin）。
+// 用于区分「镜像内置的 FFmpeg」与「系统安装的 FFmpeg」。
+func IsContainerFFBinaryPath(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	dir := filepath.Dir(filepath.Clean(path))
+	if dir == ContainerFFBinaryDir {
+		return true
+	}
+	for _, fallback := range containerFFBinaryFallbackDirs {
+		if dir == fallback {
+			return true
+		}
+	}
+	return false
+}
+
+// ResolveFFmpegPath resolves the ffmpeg binary location.
+// 容器模式按候选链回退（env → /app/internal/bin → /usr/local/bin → PATH，见
+// findFFBinaryPathWithLookup）；原生安装使用工具下载，macOS 另支持随包可执行文件；
+// release 构建仅相对可执行文件目录解析。
 func ResolveFFmpegPath() (string, error) {
 	return findFFmpegPath()
 }
@@ -252,12 +299,32 @@ func findFFBinaryPath(name string) (string, error) {
 
 func findFFBinaryPathWithLookup(name string, lookup func(string) (string, error)) (string, error) {
 	if runtimeconfig.ContainerMode() {
-		imagePath := ContainerFFBinaryDir + "/" + name
-		resolved, err := lookup(imagePath)
-		if err != nil {
-			return "", fmt.Errorf("%s unavailable in Docker image at %s: %w", name, imagePath, err)
+		// 容器内按优先级回退，而不是只认一个硬编码路径。
+		// 背景：官方镜像布局随版本变过（v2.1.0 → /usr/local/bin，v2.1.1 起 → /app/internal/bin），
+		// 单点硬编码会让「二进制与镜像底座版本不一致」直接导致播放整体失效，
+		// 且错误信息把人误导向「文件不存在」。
+		candidates := make([]string, 0, 2+len(containerFFBinaryFallbackDirs))
+		// 1) 显式环境变量优先（FFPROBE_PATH / FFMPEG_PATH）
+		if envPath := strings.TrimSpace(os.Getenv(strings.ToUpper(name) + "_PATH")); envPath != "" {
+			candidates = append(candidates, envPath)
 		}
-		return resolved, nil
+		// 2) 当前镜像布局 → 3) 历史镜像布局 → 4) PATH 查找
+		candidates = append(candidates, ContainerFFBinaryDir+"/"+name)
+		for _, dir := range containerFFBinaryFallbackDirs {
+			candidates = append(candidates, dir+"/"+name)
+		}
+		candidates = append(candidates, name)
+
+		tried := make([]string, 0, len(candidates))
+		for _, candidate := range candidates {
+			resolved, err := lookup(candidate)
+			if err == nil {
+				return resolved, nil
+			}
+			tried = append(tried, candidate)
+		}
+		return "", fmt.Errorf("%w: %s not found in container (tried: %s)",
+			ErrFFToolMissing, name, strings.Join(tried, ", "))
 	}
 
 	var candidates []string

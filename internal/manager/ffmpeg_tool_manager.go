@@ -189,9 +189,12 @@ func (m *FFmpegToolManager) StartDownload() (bool, error) {
 
 func (m *FFmpegToolManager) detectInstallation() (bool, string, bool) {
 	if m.containerMode {
+		// 镜像内置的 ffmpeg 可能位于 /app/internal/bin（当前布局）
+		// 或 /usr/local/bin（历史布局）：两者都算「内置」；
+		// 但镜像外的路径（例如系统安装）仍必须被忽略，故用目录白名单判定，
+		// 而不是简单地「解析成功即算内置」。
 		if m.resolveFFmpeg != nil {
-			resolvedPath, err := m.resolveFFmpeg()
-			if err == nil && resolvedPath == util.ContainerFFBinaryDir+"/ffmpeg" {
+			if resolvedPath, err := m.resolveFFmpeg(); err == nil && util.IsContainerFFBinaryPath(resolvedPath) {
 				return true, "builtin", false
 			}
 		}

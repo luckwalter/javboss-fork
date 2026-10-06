@@ -360,12 +360,18 @@ func respondPlaybackError(c *gin.Context, err error) {
 	switch {
 	case err == nil:
 		return
-	case errors.Is(err, os.ErrNotExist):
-		respondLocalizedError(c, http.StatusNotFound, "视频文件或所在目录不存在", "Video file or directory does not exist")
 	case errors.Is(err, context.Canceled):
 		c.Status(499)
-	case strings.Contains(err.Error(), "ffmpeg not found"), strings.Contains(err.Error(), "ffprobe not found"):
+	// 「工具缺失」必须排在 os.ErrNotExist 之前：它的底层错误链（stat 失败）
+	// 同样满足 errors.Is(err, fs.ErrNotExist)，否则会被误报成
+	// 404「视频文件或所在目录不存在」，把人引向文件/挂载的排查方向。
+	case errors.Is(err, util.ErrFFToolMissing),
+		strings.Contains(err.Error(), "unavailable in Docker image"),
+		strings.Contains(err.Error(), "ffmpeg not found"),
+		strings.Contains(err.Error(), "ffprobe not found"):
 		respondLocalizedError(c, http.StatusServiceUnavailable, "缺少浏览器播放所需组件", err.Error())
+	case errors.Is(err, os.ErrNotExist):
+		respondLocalizedError(c, http.StatusNotFound, "视频文件或所在目录不存在", "Video file or directory does not exist")
 	case strings.Contains(err.Error(), "browser playback is not supported"):
 		respondLocalizedError(c, http.StatusUnprocessableEntity, "当前视频不支持浏览器播放", err.Error())
 	case strings.Contains(err.Error(), "invalid segment"), strings.Contains(err.Error(), "invalid id"), strings.Contains(err.Error(), "invalid location_id"), strings.Contains(err.Error(), "invalid path"):

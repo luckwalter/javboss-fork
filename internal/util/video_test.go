@@ -2,6 +2,7 @@ package util
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -295,38 +296,75 @@ func TestReleaseFFBinaryLookupOnlyUsesExecutableDirectory(t *testing.T) {
 	}
 }
 
-func TestDockerFFBinaryLookupOnlyUsesFixedImagePath(t *testing.T) {
+func TestDockerFFBinaryLookupPrefersImagePathsWithFallbacks(t *testing.T) {
 	t.Setenv("JAVBOSS_BUILD_MODE", "release")
 	t.Setenv("JAVBOSS_CONTAINER", "1")
+	t.Setenv("FFMPEG_PATH", "")
+	t.Setenv("FFPROBE_PATH", "")
 	t.Chdir(t.TempDir())
-	t.Setenv("FFMPEG_PATH", "/ignored/ffmpeg")
-	t.Setenv("FFPROBE_PATH", "/ignored/ffprobe")
+
 	for _, name := range []string{"ffmpeg", "ffprobe"} {
-		for _, installed := range []bool{true, false} {
-			t.Run(fmt.Sprintf("%s/installed=%t", name, installed), func(t *testing.T) {
-				want := "/app/internal/bin/" + name
-				var calls []string
-				lookup := func(candidate string) (string, error) {
-					calls = append(calls, candidate)
-					if candidate == want && !installed {
-						return "", os.ErrNotExist
-					}
-					// Other paths would succeed, exposing any unwanted fallback.
+		t.Run(name, func(t *testing.T) {
+			primary := "/app/internal/bin/" + name
+			legacy := "/usr/local/bin/" + name
+
+			// 1) 当前镜像布局可用时优先命中，且不再继续探测后面的候选。
+			var calls []string
+			lookup := func(candidate string) (string, error) {
+				calls = append(calls, candidate)
+				if candidate == primary {
 					return candidate, nil
 				}
-				got, err := findFFBinaryPathWithLookup(name, lookup)
-				if len(calls) != 1 || calls[0] != want {
-					t.Fatalf("lookup paths = %v, want only %s", calls, want)
+				t.Errorf("unexpected fallback after primary hit: %q", candidate)
+				return candidate, nil
+			}
+			got, err := findFFBinaryPathWithLookup(name, lookup)
+			if err != nil || got != primary {
+				t.Fatalf("got %q, %v; want %q", got, err, primary)
+			}
+			if len(calls) != 1 {
+				t.Fatalf("lookup calls = %v; want only the primary image path", calls)
+			}
+
+			// 2) 当前布局缺失时回退到历史镜像布局（v2.1.0 用的是 /usr/local/bin）。
+			lookup = func(candidate string) (string, error) {
+				if candidate == primary {
+					return "", os.ErrNotExist
 				}
-				if installed {
-					if err != nil || got != want {
-						t.Fatalf("got %q, %v; want %q", got, err, want)
-					}
-				} else if err == nil || got != "" {
-					t.Fatalf("missing image binary must fail without fallback: %q, %v", got, err)
+				return candidate, nil
+			}
+			got, err = findFFBinaryPathWithLookup(name, lookup)
+			if err != nil || got != legacy {
+				t.Fatalf("fallback got %q, %v; want %q", got, err, legacy)
+			}
+
+			// 3) 显式环境变量（FFPROBE_PATH / FFMPEG_PATH）优先于镜像布局。
+			custom := filepath.Join(t.TempDir(), name)
+			t.Setenv(strings.ToUpper(name)+"_PATH", custom)
+			lookup = func(candidate string) (string, error) {
+				if candidate == custom {
+					return candidate, nil
 				}
-			})
-		}
+				t.Errorf("unexpected candidate before custom path: %q", candidate)
+				return candidate, nil
+			}
+			got, err = findFFBinaryPathWithLookup(name, lookup)
+			if err != nil || got != custom {
+				t.Fatalf("custom path got %q, %v; want %q", got, err, custom)
+			}
+
+			// 4) 全部缺失时报错，并且必须能被 errors.Is(err, ErrFFToolMissing) 识别——
+			//    respondPlaybackError 依赖这个哨兵错误把「工具缺失」与
+			//    「媒体文件不存在」区分开（二者错误链都会命中 fs.ErrNotExist）。
+			lookup = func(string) (string, error) { return "", os.ErrNotExist }
+			got, err = findFFBinaryPathWithLookup(name, lookup)
+			if err == nil || got != "" {
+				t.Fatalf("missing binary must fail: %q, %v", got, err)
+			}
+			if !errors.Is(err, ErrFFToolMissing) {
+				t.Fatalf("error %v must match ErrFFToolMissing", err)
+			}
+		})
 	}
 }
 
