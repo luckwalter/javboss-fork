@@ -250,8 +250,8 @@ env(FFPROBE_PATH / FFMPEG_PATH)
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `BASE_IMAGE` | `javboss-fork:2.1.2` | 底座 = 上一版可用镜像（已自带 ffprobe/ffmpeg） |
-| `NEW_TAG` | `javboss-fork:2.1.3` | 目标 tag |
+| `BASE_IMAGE` | `javboss-fork:2.2.0` | 底座 = 上一版可用镜像（已自带 ffprobe/ffmpeg） |
+| `NEW_TAG` | `javboss-fork:2.2.1` | 目标 tag |
 | `GO_IMAGE` | `golang:1.25-bookworm` | 编译用镜像 |
 
 > **两种构建路线怎么选**：
