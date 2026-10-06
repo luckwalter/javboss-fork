@@ -32,7 +32,7 @@ export NAS_PASS='<QNAP SSH 密码>'   # 必填
 
 | 脚本 | 用途 |
 |---|---|
-| `8_fix_ffprobe.py` | 修「**视频文件或所在目录不存在**」播放故障：JavBoss 容器模式硬编码 `/app/internal/bin/{ffprobe,ffmpeg}`，底座镜像版本不同就会路径失配。`--check` 只检测；默认补齐 → 重启（sync.Once 缓存必须重启） → 验证 `/videos/<id>/streams`=200 → commit 固化。原理见 `docs/maintenance-zh.md` 第 9 节 |
+| `8_fix_ffprobe.py` | 修「**视频文件或所在目录不存在**」播放故障：**≤ v2.1.2 的历史镜像**中，JavBoss 容器模式把 ffprobe 路径硬编码为 `/app/internal/bin/{ffprobe,ffmpeg}`，底座镜像版本不同就路径失配。`--check` 只检测；默认补齐 → 重启（旧版 `sync.Once` 缓存必须重启） → 验证 `/videos/<id>/streams`=200 → commit 固化。**注：`javboss-fork:2.1.3` 起源码已修复该问题**（候选链回退 + 503 分类 + 失败不缓存），此脚本仅用于维护历史镜像。原理见 `docs/maintenance-zh.md` 第 9 节 |
 | `9_verify_playback.py` | 全量验证每个视频都可播（遍历 `/videos` 逐个测 `/videos/<id>/streams`）。**升级/重编镜像/动挂载后必跑**；`--deep` 另抽测 `/stream` 与 m3u8。只依赖标准库，本机直连 NAS HTTP 端口即可 |
 
 ## 原则（违反必翻车）

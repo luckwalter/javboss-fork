@@ -116,6 +116,13 @@ docker run --rm -v <FORK>/src:/fork -v <FORK>/build:/out golang:1.25 sh /fork/bu
 
 ## 9. 播放故障「视频文件或所在目录不存在」（2026-10-06 实战）
 
+> **状态（2026-10-06 晚更新）：代码根因已在 fork 中修复，镜像 `javboss-fork:2.1.3` 起生效**（提交 `ad880f4`）。
+> - 容器模式不再只认 `/app/internal/bin`，改为候选链 `env(FFPROBE_PATH/FFMPEG_PATH)` → `/app/internal/bin` → `/usr/local/bin` → `PATH`
+> - 「工具缺失」不再被误报成 404，改为 **503「缺少浏览器播放所需组件」**（新增哨兵错误 `util.ErrFFToolMissing`，并把该判定排到 `os.ErrNotExist` 之前）
+> - `ResolveFFprobePath` 改为**仅成功时缓存**，补齐工具后**无需重启进程**即可恢复
+>
+> 因此下面这套**运行时规避手段仅适用于 ≤ v2.1.2 的历史镜像**；排障思路（判别方法）仍然通用。
+
 **症状**：网页点开视频 → 提示「视频文件或所在目录不存在」，但文件确实在（`ls` 可见、挂载正常）。
 
 **真因（三层，缺一不可）**
@@ -161,7 +168,7 @@ $D commit javboss javboss-fork:2.1.2
 ```sh
 D=/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker
 $D inspect javboss > /share/CACHEDEV1_DATA/Backup/javboss/javboss-inspect-$(date +%Y%m%d).json
-$D create --name chk javboss-fork:2.1.2          # 容器名不能以 _ 开头！
+$D create --name chk javboss-fork:2.1.3          # 容器名不能以 _ 开头！
 $D cp chk:/app/internal/bin/ffprobe /share/chk_ffprobe && ls -l /share/chk_ffprobe   # 应 ~48MB
 $D rm -f chk
 ```
@@ -185,7 +192,7 @@ $D run -d --name javboss \
   -e TZ=Asia/Shanghai \
   -v /share/CACHEDEV1_DATA/Container/javboss/data:/app/data \
   -v /:/host:ro \
-  javboss-fork:2.1.2 ./javboss -port 8655
+  javboss-fork:2.1.3 ./javboss -port 8655
 ```
 
 **重建后必验（三步）**：
@@ -204,7 +211,7 @@ $D logs javboss | grep -c 'probe playback support error'        # 必须为 0
 | `HTTP_PROXY` / `HTTPS_PROXY` | squid `192.168.2.175:3128` | 刮削外网超时（NAS DNS 被污染） |
 | `TZ` | `Asia/Shanghai` | 日志与时间显示错位 |
 
-**配置基线**：`/share/CACHEDEV1_DATA/Container/javboss/docker-compose.yml` 已于 2026-10-06 对齐 2.1.2（旧版备份 `Backup/javboss/docker-compose.yml.bak-20261006`）。当前运行容器由 `docker run` 建立，参数与该文件一致；用 compose 重建前必须先 `stop` + `rm` 现有容器（同名冲突）。
+**配置基线**：`/share/CACHEDEV1_DATA/Container/javboss/docker-compose.yml` 已于 2026-10-06 对齐（当前 `javboss-fork:2.1.3`；旧版备份 `Backup/javboss/docker-compose.yml.bak-20261006`）。当前运行容器由 `docker run` 建立，参数与该文件一致；用 compose 重建前必须先 `stop` + `rm` 现有容器（同名冲突）。**改 tag 时记得同步更新该文件。**
 
 **数据目录整洁**：一次性调试脚本禁止长期留在 `Container/javboss/data/`（那是 `/app/data`，会随备份一起膨胀）。走 `scripts/maintenance/`，产物放 `/share/.../Backup/`。
 
