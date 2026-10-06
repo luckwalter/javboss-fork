@@ -354,3 +354,7 @@ python3 scripts/maintenance/11_deploy_fork_image.py --image javboss-fork:2.2.1
 | [`../scripts/maintenance/README.md`](../scripts/maintenance/README.md) | 工具链逐脚本说明 |
 | [issue #1](https://github.com/luckwalter/javboss-fork/issues/1) | 容器模式 ffprobe/ffmpeg 路径硬编码 |
 | [issue #2](https://github.com/luckwalter/javboss-fork/issues/2) | 播放错误误分类 + 死代码 + 永久缓存 |
+| [issue #3](https://github.com/luckwalter/javboss-fork/issues/3) | goose 未启用 `WithAllowMissing` → 容器启动即 Fatal |
+| [issue #4](https://github.com/luckwalter/javboss-fork/issues/4) | goose 迁移版本号撞号 → 迁移被永久跳过 |
+| [issue #5](https://github.com/luckwalter/javboss-fork/issues/5) | 测试断言硬编码 LF（Windows CRLF，未修复） |
+| [issue #6](https://github.com/luckwalter/javboss-fork/issues/6) | 工具链静默失败（apk 错误被吞 / 备份早于停容器） |

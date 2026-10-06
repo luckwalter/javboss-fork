@@ -45,7 +45,7 @@
 | 1 | **功能增强** | 女优头像改用**独立高清人像**（1456 人中 1288 人已有），不再是「从某部作品的封面裁一块」 | 5 处源码改动 + goose 迁移 + 头像数据文件 |
 | 2 | **缺陷修复** | 容器模式下 ffprobe/ffmpeg 路径硬编码，导致**全部视频播放时报「视频文件或所在目录不存在」** | 源码修复 → [issue #1](https://github.com/luckwalter/javboss-fork/issues/1) |
 | 3 | **缺陷修复** | 播放探测失败被**误分类成 404**；`"ffprobe not found"` 判据是**死代码**；失败结果被 `sync.Once` **永久缓存** | 源码修复 → [issue #2](https://github.com/luckwalter/javboss-fork/issues/2) |
-| 4 | **升级加固** | 迁移入口加 `goose.WithAllowMissing()`，与 fork 的 `2099` 迁移号段**成对使用**，避免跟官方升级后容器启动即 Fatal | 1 处源码改动（见 [第 5.1 节](#5-跟官方升级)） |
+| 4 | **升级加固** | 迁移入口加 `goose.WithAllowMissing()`，与 fork 的 `2099` 迁移号段**成对使用**，避免跟官方升级后容器启动即 Fatal | 1 处源码改动 → [issue #3](https://github.com/luckwalter/javboss-fork/issues/3) / [#4](https://github.com/luckwalter/javboss-fork/issues/4) |
 | 5 | **运维工具链** | 12 个可复用脚本：资料补全 / 高清头像流水线 / 播放全量验证 / 一键编译出镜像 / 一键部署到 NAS | [`scripts/maintenance/`](scripts/maintenance/) |
 | 6 | **运维手册** | 资料渠道清单、头像替换判据、踩坑 Top 12、跟官方升级流程、容器重建模板、安全红线 | [`docs/maintenance-zh.md`](docs/maintenance-zh.md) |
 | 7 | **功能详解** | 本 fork 每个特性的原理、数据、验证方式 | [`docs/fork-features-zh.md`](docs/fork-features-zh.md) |
@@ -90,7 +90,18 @@
 
 ## 2. 上游缺陷修复
 
-两个问题都已在本分支修好，并在本仓库开了 issue 存档（含完整复现步骤、根因代码、修复前后行为对照）：
+本节记录本分支修掉的 **4 个缺陷**与 **1 处升级加固**；每一条都在本仓库有 issue 存档（含完整复现步骤、根因源码定位、修复前后行为对照）：
+
+| issue | 主题 | 标签 | 状态 |
+|---|---|---|---|
+| [#1](https://github.com/luckwalter/javboss-fork/issues/1) | 容器模式 ffprobe/ffmpeg 路径硬编码，全部视频播放报「文件不存在」 | `bug` `docker` | ✅ 已修复并关闭 |
+| [#2](https://github.com/luckwalter/javboss-fork/issues/2) | 播放探测失败被误报为 404 + 判据死代码 + 失败结果被永久缓存 | `bug` | ✅ 已修复并关闭 |
+| [#3](https://github.com/luckwalter/javboss-fork/issues/3) | goose 未启用 `WithAllowMissing`，上游发版后容器启动即 Fatal | `bug` `docker` | ✅ 已修复并关闭 |
+| [#4](https://github.com/luckwalter/javboss-fork/issues/4) | goose 迁移版本号撞号，同号迁移被永久跳过 | `bug` | ✅ 已修复并关闭 |
+| [#5](https://github.com/luckwalter/javboss-fork/issues/5) | 测试断言硬编码 LF，Windows（CRLF checkout）下 2 个测试失败 | `bug` | ⬜ 未修复（环境性），存档备查 |
+| [#6](https://github.com/luckwalter/javboss-fork/issues/6) | 维护工具链两处静默失败：apk 错误被吞 / DB 备份早于停容器 | `bug` `tooling` | ✅ 已修复并关闭 |
+
+其中 **#1 / #2** 是上游同样存在的缺陷，详述如下：
 
 ### [issue #1](https://github.com/luckwalter/javboss-fork/issues/1) · 容器模式 ffprobe/ffmpeg 路径硬编码
 
@@ -117,6 +128,31 @@
 > 镜像版本沿革：`2.1.3`（修复落地）→ `2.2.0`（合并上游 `main` `5aa89f3`）→ **`2.2.1`**（迁移入口加 `WithAllowMissing`，当前基线）。
 > 已在 NAS 上跑过全量验证：**2243 / 2243 个视频可播、0 异常**。
 > 未修复的历史镜像（≤ v2.1.2）仍可用工具链里的 `8_fix_ffprobe.py` 做运行时规避。
+
+### [issue #3](https://github.com/luckwalter/javboss-fork/issues/3) / [#4](https://github.com/luckwalter/javboss-fork/issues/4) · 迁移系统：容器启动即崩 + 迁移被静默跳过
+
+合并上游 `main` 后重建容器，容器进入 `Restarting (1)` 死循环，日志：
+
+```
+open database: migrate database: error: found 1 missing migrations before current version 209901010001
+```
+
+两个缺陷叠加所致：
+
+| | #4 迁移撞号 | #3 启动即崩 |
+|---|---|---|
+| **根因** | goose 用「文件名数字前缀」作迁移唯一标识（`migrate.go` 的 `NumericComponent`），DB 里也只记版本号 → fork 的 `202610040001_add_jav_idol_avatar` 与上游新增的 `202610040001_add_watched_time` 同号，后者被判定「已应用」而**永久跳过**（`watched_ms` 两列建不出来） | fork 迁移改用 `2099` 保留号段避让后，该号段排在一切上游日期号段**之后** → 上游**后续新增**的任何迁移版本号恒小于它，goose 默认把这类迁移判为 missing 并**直接报错退出**（`up.go:82`） |
+| **修复** | fork 迁移 → `209901010001_add_jav_idol_avatar.go` | `goose.UpContext(..., goose.WithAllowMissing())`；`up.go:92` 会把 missing **补跑**而非跳过 |
+| **约束** | 两条修复**成对使用，缺一不可**：只换号段不开 allowMissing → 上游下次发版就崩；只开 allowMissing 不换号段 → 继续撞号被静默跳过 | 同左 |
+
+**A/B 实证**（同一份库快照，只替换二进制）：`2.2.0` → `exited(1)`，精确复现上面那条报错；`2.2.1` → `running`、`GET / = 200`，缺失的 `202610040001` 行被**自动补回**。
+
+### [issue #6](https://github.com/luckwalter/javboss-fork/issues/6) · 工具链静默失败
+
+升级过程中暴露的两处「不报错、但结果是错的」：`nas_env.docker_python` 把 `apk add python3` 的失败用 `>/dev/null 2>&1` 吞掉、且 `&&` 短路导致后续脚本根本没跑（调用方只拿到两个空字符串）；DB 备份早于停容器，造成 SQLite WAL 快照不完整。前者已改为「本地 sqlite3 往返」，后者已调整为「停容器 → 备份 → 改库 → 起容器」。
+
+> 完整源码定位（goose `up.go:77/82/88/92`、`migrate.go:35-37`）见 issue [#3](https://github.com/luckwalter/javboss-fork/issues/3) / [#4](https://github.com/luckwalter/javboss-fork/issues/4)；
+> 运维侧操作流程见 [`docs/maintenance-zh.md`](docs/maintenance-zh.md)。
 
 ---
 
