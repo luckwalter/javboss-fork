@@ -107,6 +107,7 @@ type playbackSource struct {
 
 type playbackInfo struct {
 	VideoID       int64            `json:"video_id"`
+	LocationID    int64            `json:"location_id"`
 	PreferredKind string           `json:"preferred_kind"`
 	Sources       []playbackSource `json:"sources"`
 	VideoCodec    string           `json:"video_codec"`
@@ -193,6 +194,7 @@ func getVideoStreams(c *gin.Context) {
 func buildPlaybackInfo(video *models.Video, locationID int64, probe *util.PlaybackProbeResult) playbackInfo {
 	info := playbackInfo{
 		VideoID:       video.ID,
+		LocationID:    locationID,
 		PreferredKind: "hls",
 		Sources:       []playbackSource{},
 		VideoCodec:    probe.VideoCodec,
@@ -499,9 +501,10 @@ func playVideoFile(c *gin.Context) {
 		dataDir = filepath.Dir(common.AppConfig.DatabasePath)
 	}
 	if err := mpv.PlayVideo(fullPath, mpv.PlayOptions{
-		DataDir:      dataDir,
-		VideoID:      videoID,
-		StartTimeSec: req.StartTimeSec,
+		NewWatchReporter: localPlaybackReporter(videoID, 0, dirPath, fullPath),
+		DataDir:          dataDir,
+		VideoID:          videoID,
+		StartTimeSec:     req.StartTimeSec,
 	}); err != nil {
 		logging.Error("play video file error: %v", err)
 		if strings.Contains(err.Error(), "mpv not found") {
@@ -519,15 +522,28 @@ func playVideoFile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+var openSystemPlaylist = util.OpenPlaylist
+
+// playVideoPlaylist accepts ordered items (video_id, optional location_id) and
+// player: "mpv" (default) or "system" (local access, opens an M3U8 playlist).
 func playVideoPlaylist(c *gin.Context) {
 	if runtimeconfig.ContainerMode() {
-		respondLocalizedError(c, http.StatusNotImplemented, "当前部署模式已禁用 MPV 播放", "MPV playback is disabled")
+		respondLocalizedError(c, http.StatusNotImplemented, "当前部署模式已禁用外部播放器", "External playback is disabled")
 		return
 	}
 
 	var req videoPlaylistRequest
 	if err := c.ShouldBindJSON(&req); err != nil || len(req.Items) == 0 {
 		respondLocalizedError(c, http.StatusBadRequest, "播放列表请求无效", "Invalid playlist request")
+		return
+	}
+
+	if req.Player != "" && req.Player != "mpv" && req.Player != "system" {
+		respondLocalizedError(c, http.StatusBadRequest, "播放器参数无效", "Invalid player")
+		return
+	}
+	if req.Player == "system" && isRemoteRequest(c.Request.RemoteAddr) {
+		respondLocalizedError(c, http.StatusForbidden, "远程访问不支持系统播放器批量播放", "System playlist playback requires local access")
 		return
 	}
 
@@ -586,10 +602,25 @@ func playVideoPlaylist(c *gin.Context) {
 				}
 			},
 			Options: mpv.PlayOptions{
-				DataDir: dataDir,
-				VideoID: requested.VideoID,
+				NewWatchReporter: localPlaybackReporter(videoID, location.ID, "", ""),
+				DataDir:          dataDir,
+				VideoID:          requested.VideoID,
 			},
 		})
+	}
+
+	if req.Player == "system" {
+		paths := make([]string, len(items))
+		for i, item := range items {
+			paths[i] = item.Path
+		}
+		if err := openSystemPlaylist(paths); err != nil {
+			logging.Error("open system playlist error: %v", err)
+			respondLocalizedError(c, http.StatusInternalServerError, "使用系统播放器打开播放列表失败，请检查 M3U8 文件关联", "Failed to open playlist with the system player; check the M3U8 file association")
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "count": len(items)})
+		return
 	}
 
 	if err := mpv.PlayPlaylist(items); err != nil {
@@ -1226,8 +1257,8 @@ func deleteVideoLocation(c *gin.Context) {
 		return
 	}
 
-	if err := dbpkg.HideVideoLocationsByIDs(c.Request.Context(), []int64{locationID}); err != nil {
-		logging.Error("hide deleted video location error: %v", err)
+	if err := dbpkg.DeleteVideoLocationsByIDs(c.Request.Context(), []int64{locationID}); err != nil {
+		logging.Error("delete video location record error: %v", err)
 		respondLocalizedError(c, http.StatusInternalServerError, "更新视频记录失败", "Failed to update video record")
 		return
 	}
@@ -1271,7 +1302,8 @@ type videoPlaylistItemRequest struct {
 }
 
 type videoPlaylistRequest struct {
-	Items []videoPlaylistItemRequest `json:"items"`
+	Player string                     `json:"player"`
+	Items  []videoPlaylistItemRequest `json:"items"`
 }
 
 func resolveVideoPathFromBody(c *gin.Context) (string, string, error) {
@@ -1385,6 +1417,8 @@ func sameCleanPath(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
 }
 
+const thumbnailWaitTimeout = 20 * time.Second
+
 func getThumbnail(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -1416,30 +1450,27 @@ func getThumbnail(c *gin.Context) {
 		}
 	}
 
-	second, ok := manager.PickScreenshotSecond(video.DurationSec)
-	if !ok {
+	serveThumbnail(c, video, common.ScreenshotManager.GetThumbnail)
+}
+
+func serveThumbnail(c *gin.Context, video *models.Video, wait func(context.Context, *models.Video) (string, error)) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), thumbnailWaitTimeout)
+	defer cancel()
+	path, err := wait(ctx, video)
+	if err == nil {
+		c.File(path)
+		return
+	}
+	if c.Request.Context().Err() != nil {
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	if errors.Is(err, manager.ErrNoThumbnail) {
 		respondLocalizedError(c, http.StatusNotFound, "视频没有可用的缩略图时间点", "No thumbnail timestamp is available for this video")
 		return
 	}
-
-	screenshotPath := manager.ScreenshotPath(dataDir, video.ID, second)
-	if screenshotPath == "" {
-		respondLocalizedError(c, http.StatusInternalServerError, "生成缩略图路径失败", "Failed to build the thumbnail path")
-		return
-	}
-
-	if _, err := os.Stat(screenshotPath); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			common.ScreenshotManager.EnqueueForVideo(video)
-			respondLocalizedError(c, http.StatusNotFound, "视频缩略图尚未生成", "Video thumbnail has not been generated yet")
-			return
-		}
-		logging.Error("stat screenshot error: %v", err)
-		respondLocalizedError(c, http.StatusInternalServerError, "读取视频缩略图失败", "Failed to inspect the video thumbnail")
-		return
-	}
-
-	c.File(screenshotPath)
+	c.Header("Retry-After", "3")
+	respondLocalizedError(c, http.StatusServiceUnavailable, "视频缩略图暂不可用，请稍后重试", "Video thumbnail is temporarily unavailable; retry shortly")
 }
 
 func defaultVideoThumbnailRequested(c *gin.Context) bool {

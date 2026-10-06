@@ -12,6 +12,42 @@ import { normalizeJavSort } from '@/constants/jav'
 
 export function createJavSlice({ set, get, lists }) {
   return {
+    javVideoDeletions: {},
+    removeJavVideos: (id, videoIds) => {
+      const removedVideos = new Set(videoIds.map(Number))
+      get().invalidateFavoriteRequests()
+      set((state) => {
+        const selectedVideoIds = new Set(state.selectedVideoIds)
+        const selectedVideoMeta = { ...state.selectedVideoMeta }
+        for (const [key, meta] of Object.entries(selectedVideoMeta)) {
+          if (removedVideos.has(Number(meta.video_id))) {
+            selectedVideoIds.delete(key)
+            delete selectedVideoMeta[key]
+          }
+        }
+        return {
+          javVideoDeletions: {
+            ...state.javVideoDeletions,
+            [id]: [...(state.javVideoDeletions[id] || []), ...removedVideos],
+          },
+          selectedVideoIds,
+          selectedVideoMeta,
+        }
+      })
+      const refreshed = Object.entries(lists).map(([name, list]) =>
+        list.reconcile(
+          name === 'jav'
+            ? (item) => Number(item.id) === Number(id)
+            : name === 'video'
+              ? (video) => removedVideos.has(Number(video.id))
+              : undefined
+        )
+      )
+      void get().loadJavTags({ force: true })
+      void get().loadTags({ force: true })
+      void get().loadJavFavoriteGroups('jav', { force: true })
+      return Promise.all(refreshed)
+    },
     patchJavItem: (updated) =>
       set((state) => ({ javItems: mergeJavItem(state.javItems, updated) })),
     patchJavIdol: (updated) =>

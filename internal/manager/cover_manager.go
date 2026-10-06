@@ -33,25 +33,33 @@ type CoverManager struct {
 	scheduled map[string]struct{}
 }
 
-const minValidCoverSizeBytes int64 = 30 * 1024
+const (
+	minValidCoverSizeBytes int64 = 5 * 1024
+	coverProviderTimeout         = 8 * time.Second
+)
 
 var errInvalidCover = errors.New("invalid cover")
 var errCoverNotFound = errors.New("cover not found")
 
 var lookupJavByCode = jav.LookupJavByCode
 
-// NewCoverManager creates a manager when coverDir and providers are provided.
-func NewCoverManager(coverDir string, providers []jav.Provider) *CoverManager {
+// NewCoverManager creates a manager with the built-in cover providers.
+func NewCoverManager(coverDir string) *CoverManager {
 	coverDir = strings.TrimSpace(coverDir)
-	providers = compactCoverProviders(providers)
-	if coverDir == "" || len(providers) == 0 {
+	if coverDir == "" {
 		return nil
 	}
 	return &CoverManager{
-		tasks:     make(chan string, 5000), // larger buffer to reduce producer blocking
-		coverDir:  coverDir,
-		workers:   8,
-		providers: providers,
+		tasks:    make(chan string, 5000), // larger buffer to reduce producer blocking
+		coverDir: coverDir,
+		workers:  8,
+		providers: []jav.Provider{
+			jav.ProviderJavBus,
+			jav.ProviderJavDatabase,
+			jav.ProviderThePornDB,
+			jav.ProviderJavDBAPI,
+			jav.ProviderAvsox,
+		},
 		scheduled: make(map[string]struct{}),
 	}
 }
@@ -138,7 +146,7 @@ func (m *CoverManager) clearScheduled(code string) {
 	m.mu.Unlock()
 }
 
-func (m *CoverManager) handleTask(parent context.Context, code string) error {
+func (m *CoverManager) handleTask(ctx context.Context, code string) error {
 	code = normalizeCode(code)
 	if code == "" {
 		return errors.New("empty code")
@@ -146,9 +154,6 @@ func (m *CoverManager) handleTask(parent context.Context, code string) error {
 	if m.Exists(code) {
 		return nil
 	}
-
-	ctx, cancel := context.WithTimeout(parent, 45*time.Second)
-	defer cancel()
 
 	if err := m.downloadCoverFromProviders(ctx, code); err != nil {
 		if errors.Is(err, errCoverNotFound) {
@@ -163,16 +168,16 @@ func (m *CoverManager) downloadCoverFromProviders(ctx context.Context, code stri
 	if m == nil {
 		return errors.New("cover manager not configured")
 	}
-	providers := m.providers
-	if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(code)), "FC2-PPV-") {
-		// FC2 metadata (including the cover URL) comes from JavDB API. The
-		// general cover sources do not resolve these numbers.
-		providers = []jav.Provider{jav.ProviderJavDBAPI, jav.ProviderAvsox}
-	}
 	var lastErr error
-	for _, provider := range providers {
-		info, err := lookupJavByCode(ctx, code, provider)
+	for _, provider := range m.providers {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Each provider gets its own budget for both metadata and image download.
+		providerCtx, cancel := context.WithTimeout(ctx, coverProviderTimeout)
+		info, err := lookupJavByCode(providerCtx, code, provider)
 		if err != nil {
+			cancel()
 			if errors.Is(err, jav.ErrNotFound) {
 				continue
 			}
@@ -186,9 +191,12 @@ func (m *CoverManager) downloadCoverFromProviders(ctx context.Context, code stri
 			coverURL = strings.TrimSpace(info.CoverURL)
 		}
 		if coverURL == "" {
+			cancel()
 			continue
 		}
-		if err := m.downloadCover(ctx, code, coverURL); err != nil {
+		err = m.downloadCover(providerCtx, code, coverURL)
+		cancel()
+		if err != nil {
 			if errors.Is(err, errCoverNotFound) || errors.Is(err, errInvalidCover) {
 				lastErr = err
 				continue
@@ -198,6 +206,9 @@ func (m *CoverManager) downloadCoverFromProviders(ctx context.Context, code stri
 			continue
 		}
 		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if lastErr != nil {
 		return fmt.Errorf("download cover from providers: %w", lastErr)
@@ -256,11 +267,20 @@ func (m *CoverManager) downloadCover(ctx context.Context, code, coverURL string)
 		_ = os.Remove(tmp)
 		return fmt.Errorf("close cover: %w", err)
 	}
-	if written < minValidCoverSizeBytes && !strings.HasPrefix(code, "fc2-ppv-") {
+	if written < minValidCoverSizeBytes {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("%w: size %d below minimum %d", errInvalidCover, written, minValidCoverSizeBytes)
 	}
-	if (encoded || written < minValidCoverSizeBytes) && !isDecodableCoverFile(tmp) {
+	blacklisted, err := isBlacklistedCoverFile(tmp, written)
+	if err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("check cover blacklist: %w", err)
+	}
+	if blacklisted {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("%w: known placeholder image", errInvalidCover)
+	}
+	if encoded && !isDecodableCoverFile(tmp) {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("%w: file (%d bytes) is not a decodable image", errInvalidCover, written)
 	}
@@ -339,12 +359,11 @@ func isValidCoverFile(path string) bool {
 	if err != nil || !info.Mode().IsRegular() {
 		return false
 	}
-	// FC2 covers are validated when downloaded. Loading them only checks the
-	// filename and file metadata, avoiding another image decode for small files.
-	if strings.HasPrefix(strings.ToLower(filepath.Base(path)), "fc2-ppv-") {
-		return info.Size() > 0
+	if info.Size() < minValidCoverSizeBytes {
+		return false
 	}
-	return info.Size() >= minValidCoverSizeBytes
+	blacklisted, err := isBlacklistedCoverFile(path, info.Size())
+	return err == nil && !blacklisted
 }
 
 func isDecodableCoverFile(path string) bool {
@@ -369,18 +388,4 @@ func guessExt(ct string) string {
 	default:
 		return ""
 	}
-}
-
-func compactCoverProviders(providers []jav.Provider) []jav.Provider {
-	if len(providers) == 0 {
-		return nil
-	}
-	compact := make([]jav.Provider, 0, len(providers))
-	for _, provider := range providers {
-		provider = jav.ParseProvider(int(provider))
-		if provider != jav.ProviderUnknown && provider != jav.ProviderUser && provider != jav.ProviderManualScrape {
-			compact = append(compact, provider)
-		}
-	}
-	return compact
 }

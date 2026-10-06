@@ -15,21 +15,10 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"javboss/internal/jav"
 )
-
-func TestCompactCoverProvidersExcludesNonLookupProviders(t *testing.T) {
-	got := compactCoverProviders([]jav.Provider{
-		jav.ProviderUnknown,
-		jav.ProviderUser,
-		jav.ProviderManualScrape,
-		jav.ProviderJavBus,
-	})
-	if len(got) != 1 || got[0] != jav.ProviderJavBus {
-		t.Fatalf("compact cover providers = %#v, want only JavBus", got)
-	}
-}
 
 func TestSetCoverDownloadHeadersForJavBus(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, "https://www.javbus.com/pics/cover/c85j_b.jpg", nil)
@@ -95,87 +84,79 @@ func TestDownloadCoverRejectsSmallFile(t *testing.T) {
 	}
 }
 
-func TestDownloadCoverAcceptsSmallImages(t *testing.T) {
-	for _, tc := range []struct {
-		format  string
-		encoded bool
-	}{
-		{"jpeg", false}, {"png", false}, {"jpeg", true}, {"png", true},
-	} {
-		format := tc.format
-		t.Run(fmt.Sprintf("%s/encoded=%t", format, tc.encoded), func(t *testing.T) {
-			var data bytes.Buffer
-			img := image.NewRGBA(image.Rect(0, 0, 240, 320))
-			var err error
-			if format == "jpeg" {
-				err = jpeg.Encode(&data, img, nil)
-			} else {
-				err = png.Encode(&data, img)
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if int64(data.Len()) >= minValidCoverSizeBytes {
-				t.Fatal("fixture must be smaller than the old minimum cover size")
-			}
-			payload := data.Bytes()
-			if tc.encoded {
-				const key byte = 0xad
-				payload = make([]byte, data.Len()+1)
-				payload[0] = key
-				for i, b := range data.Bytes() {
-					payload[i+1] = b ^ key
+func TestDownloadCoverImageSizeLimit(t *testing.T) {
+	for _, code := range []string{"ABC-001", "FC2-PPV-1234567"} {
+		for _, format := range []string{"jpeg", "png"} {
+			for _, encoded := range []bool{false, true} {
+				for _, size := range []int{5*1024 - 1, 5 * 1024} {
+					t.Run(fmt.Sprintf("%s/%s/encoded=%t/size=%d", code, format, encoded, size), func(t *testing.T) {
+						var data bytes.Buffer
+						img := image.NewRGBA(image.Rect(0, 0, 240, 320))
+						var err error
+						if format == "jpeg" {
+							err = jpeg.Encode(&data, img, nil)
+						} else {
+							err = png.Encode(&data, img)
+						}
+						if err != nil {
+							t.Fatal(err)
+						}
+						if data.Len() > size {
+							t.Fatal("fixture exceeds target size")
+						}
+						data.Write(make([]byte, size-data.Len()))
+						payload := data.Bytes()
+						if encoded {
+							const key byte = 0xad
+							payload = make([]byte, data.Len()+1)
+							payload[0] = key
+							for i, b := range data.Bytes() {
+								payload[i+1] = b ^ key
+							}
+						}
+						requests := 0
+						server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+							requests++
+							w.Header().Set("Content-Type", "image/"+format)
+							_, _ = w.Write(payload)
+						}))
+						defer server.Close()
+						manager := &CoverManager{coverDir: t.TempDir()}
+						err = manager.downloadCover(context.Background(), code, server.URL+"/cover."+format)
+						if size < 5*1024 {
+							if !errors.Is(err, errInvalidCover) {
+								t.Fatalf("downloadCover error = %v, want errInvalidCover", err)
+							}
+							entries, err := os.ReadDir(manager.coverDir)
+							if err != nil || len(entries) != 0 {
+								t.Fatalf("rejected cover left files: %v, err=%v", entries, err)
+							}
+							return
+						}
+						if err != nil {
+							t.Fatal(err)
+						}
+						path, ok := FindCoverPath(manager.coverDir, code)
+						if !ok || !manager.Exists(code) {
+							t.Fatal("cover must be discoverable by the manager and API")
+						}
+						got, err := os.ReadFile(path)
+						if err != nil || !bytes.Equal(got, data.Bytes()) {
+							t.Fatalf("downloaded image differs from source: %v", err)
+						}
+						if err := manager.handleTask(context.Background(), code); err != nil || requests != 1 {
+							t.Fatalf("existing cover was not reused: requests=%d err=%v", requests, err)
+						}
+						if err := os.WriteFile(path, data.Bytes()[:5*1024-1], 0o644); err != nil {
+							t.Fatal(err)
+						}
+						if manager.Exists(code) {
+							t.Fatal("cover below 5 KiB must not count as an existing image")
+						}
+					})
 				}
 			}
-			requests := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests++
-				if tc.encoded {
-					w.Header().Set("Content-Type", "binary/octet-stream")
-				} else {
-					w.Header().Set("Content-Type", "image/"+format)
-				}
-				_, _ = w.Write(payload)
-			}))
-			defer server.Close()
-			manager := &CoverManager{coverDir: t.TempDir()}
-			if err := manager.downloadCover(context.Background(), "FC2-PPV-1234567", server.URL+"/cover."+format); err != nil {
-				t.Fatal(err)
-			}
-			path, ok := FindCoverPath(manager.coverDir, "FC2-PPV-1234567")
-			if !ok || !manager.Exists("FC2-PPV-1234567") {
-				t.Fatal("small cover must be discoverable by the manager and API")
-			}
-			got, err := os.ReadFile(path)
-			if err != nil || !bytes.Equal(got, data.Bytes()) {
-				t.Fatalf("downloaded image differs from source: %v", err)
-			}
-			if err := manager.handleTask(context.Background(), "FC2-PPV-1234567"); err != nil || requests != 1 {
-				t.Fatalf("existing small cover was not reused: requests=%d err=%v", requests, err)
-			}
-			if err := os.WriteFile(path, data.Bytes()[:data.Len()/2], 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if !manager.Exists("FC2-PPV-1234567") {
-				t.Fatal("loading an existing FC2 cover must not decode its contents again")
-			}
-			if err := os.WriteFile(path, nil, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if manager.Exists("FC2-PPV-1234567") {
-				t.Fatal("empty FC2 cover must not count as an existing image")
-			}
-			// The same valid small image must not stop provider fallback for
-			// ordinary codes, whose discovery still requires at least 30 KiB.
-			if err := manager.downloadCover(context.Background(), "ABC-001", server.URL+"/cover."+format); !errors.Is(err, errInvalidCover) {
-				t.Fatalf("non-FC2 small cover error = %v, want errInvalidCover", err)
-			}
-			for _, suffix := range []string{"", ".tmp"} {
-				if _, err := os.Stat(filepath.Join(manager.coverDir, "abc-001."+format+suffix)); !errors.Is(err, os.ErrNotExist) {
-					t.Fatalf("rejected cover file remains (suffix %q): %v", suffix, err)
-				}
-			}
-		})
+		}
 	}
 }
 
@@ -273,7 +254,7 @@ func TestHandleTaskRetriesAfterSmallCover(t *testing.T) {
 	}
 }
 
-func TestHandleTaskFC2CoverProviders(t *testing.T) {
+func TestHandleTaskFC2UsesBuiltInCoverProviders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/missing.jpg" {
 			http.NotFound(w, r)
@@ -311,6 +292,8 @@ func TestHandleTaskFC2CoverProviders(t *testing.T) {
 					t.Fatalf("lookup code = %q", code)
 				}
 				switch provider {
+				case jav.ProviderJavBus, jav.ProviderJavDatabase, jav.ProviderThePornDB:
+					return nil, jav.ErrNotFound
 				case jav.ProviderJavDBAPI:
 					if tc.apiErr != nil {
 						return nil, tc.apiErr
@@ -327,13 +310,13 @@ func TestHandleTaskFC2CoverProviders(t *testing.T) {
 					return nil, jav.ErrNotFound
 				}
 			}
-			manager := NewCoverManager(t.TempDir(), []jav.Provider{
-				jav.ProviderJavBus, jav.ProviderJavDatabase, jav.ProviderThePornDB, jav.ProviderAvsox,
-			})
+			manager := NewCoverManager(t.TempDir())
 			if err := manager.handleTask(context.Background(), " FC2-PPV-1234567 "); err != nil {
 				t.Fatal(err)
 			}
-			wantCalls := []jav.Provider{jav.ProviderJavDBAPI}
+			wantCalls := []jav.Provider{
+				jav.ProviderJavBus, jav.ProviderJavDatabase, jav.ProviderThePornDB, jav.ProviderJavDBAPI,
+			}
 			if tc.fallback {
 				wantCalls = append(wantCalls, jav.ProviderAvsox)
 			}
@@ -344,5 +327,78 @@ func TestHandleTaskFC2CoverProviders(t *testing.T) {
 				t.Fatal("downloaded FC2 cover was not found")
 			}
 		})
+	}
+}
+
+func TestCoverProviderTimeoutContinuesWithFreshBudget(t *testing.T) {
+	for _, stage := range []string{"metadata", "image download"} {
+		t.Run(stage, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/slow.jpg" {
+					<-r.Context().Done()
+					return
+				}
+				_, _ = w.Write(bytes.Repeat([]byte{'x'}, int(minValidCoverSizeBytes)))
+			}))
+			defer server.Close()
+			originalLookup := lookupJavByCode
+			t.Cleanup(func() { lookupJavByCode = originalLookup })
+			var calls []jav.Provider
+			var firstCtx context.Context
+			lookupJavByCode = func(ctx context.Context, code string, provider jav.Provider) (*jav.JavInfo, error) {
+				calls = append(calls, provider)
+				deadline, ok := ctx.Deadline()
+				if remaining := time.Until(deadline); !ok || remaining < 7*time.Second || remaining > 8*time.Second {
+					t.Fatalf("provider %s budget = %s, has deadline = %t", provider, remaining, ok)
+				}
+				if provider == jav.ProviderJavBus {
+					firstCtx = ctx
+					if stage == "metadata" {
+						<-ctx.Done()
+						return nil, ctx.Err()
+					}
+					// Metadata consumes part of the same budget used by the image request.
+					time.Sleep(2 * time.Second)
+					return &jav.JavInfo{CoverURL: server.URL + "/slow.jpg"}, nil
+				}
+				if !errors.Is(firstCtx.Err(), context.DeadlineExceeded) {
+					t.Fatalf("first provider did not time out: %v", firstCtx.Err())
+				}
+				return &jav.JavInfo{CoverURL: server.URL + "/cover.jpg"}, nil
+			}
+			manager := NewCoverManager(t.TempDir())
+			manager.providers = []jav.Provider{jav.ProviderJavBus, jav.ProviderJavDBAPI}
+			started := time.Now()
+			if err := manager.handleTask(t.Context(), "FC2-PPV-1234567"); err != nil {
+				t.Fatal(err)
+			}
+			if elapsed := time.Since(started); elapsed > 10*time.Second {
+				t.Fatalf("provider lookup and download did not share an 8 second budget: %s", elapsed)
+			}
+			if !slices.Equal(calls, manager.providers) || !manager.Exists("FC2-PPV-1234567") {
+				t.Fatalf("fallback did not download a cover: providers=%v", calls)
+			}
+		})
+	}
+}
+
+func TestCoverProviderStopsWhenParentCanceled(t *testing.T) {
+	originalLookup := lookupJavByCode
+	t.Cleanup(func() { lookupJavByCode = originalLookup })
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	calls := 0
+	lookupJavByCode = func(providerCtx context.Context, code string, provider jav.Provider) (*jav.JavInfo, error) {
+		calls++
+		cancel()
+		<-providerCtx.Done()
+		return nil, providerCtx.Err()
+	}
+	manager := NewCoverManager(t.TempDir())
+	if err := manager.handleTask(ctx, "ABC-001"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("handleTask error = %v, want context canceled", err)
+	}
+	if calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", calls)
 	}
 }

@@ -286,6 +286,12 @@ export default function useJavItemActions({
     setEditorOpen(false)
   }
 
+  const handleEditorDeleted = (id, videoIds) => {
+    setEditorOpen(false)
+    detailView?.onClose?.()
+    useStore.getState().removeJavVideos(id, videoIds)
+  }
+
   const handleCustomTagsSaved = (updated) => {
     detailView?.onItemUpdated?.(updated)
     if (updated?.id) {
@@ -679,6 +685,7 @@ export default function useJavItemActions({
     setPreviewIdol,
     editorOpen,
     handleEditorSaved,
+    handleEditorDeleted,
     customTagEditorOpen,
     setCustomTagEditorOpen,
     handleCustomTagsSaved,

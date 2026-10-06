@@ -83,8 +83,6 @@ func main() {
 		return
 	}
 
-	defer mpv.Shutdown()
-
 	bootstrapCfg, err := clientpkg.LoadBootstrapConfig(baseDir)
 	if err != nil {
 		logger.Fatalf("load bootstrap config: %v", err)
@@ -95,6 +93,7 @@ func main() {
 	}
 	serverURL := resolveClientServerURL(*serverURLFlag, bootstrapCfg.ServerURL)
 	if shouldRunClientMode(serverURL) {
+		defer mpv.Shutdown()
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		clientPort := configuredPortWithOverride(bootstrapCfg.Port, portOverride)
@@ -145,6 +144,8 @@ func main() {
 		logger.Fatalf("database handle: %v", err)
 	}
 	defer sqlDB.Close()
+	// Flush final playback checkpoints while the database is still open.
+	defer mpv.Shutdown()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -173,12 +174,7 @@ func main() {
 	screenshotManager := manager.NewScreenshotManager(dataDir, db.GetVideo)
 	streamManager := manager.NewStreamManager(filepath.Join(dataDir, "cache", "streams"))
 	ffmpegToolManager := manager.NewFFmpegToolManager(ctx, baseDir)
-	coverManager := manager.NewCoverManager(cfg.JavCoverDir, []jav.Provider{
-		jav.ProviderJavBus,
-		jav.ProviderJavDatabase,
-		jav.ProviderThePornDB,
-		jav.ProviderAvsox,
-	})
+	coverManager := manager.NewCoverManager(cfg.JavCoverDir)
 
 	common.AppConfig = cfg
 	common.ScreenshotManager = screenshotManager

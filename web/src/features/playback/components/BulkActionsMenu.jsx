@@ -1,4 +1,5 @@
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
+import PlayCircleOutlineRoundedIcon from '@mui/icons-material/PlayCircleOutlineRounded'
 import { IconButton, Menu, MenuItem, Tooltip } from '@mui/material'
 import { useState } from 'react'
 import { zh } from '@/utils/i18n'
@@ -8,7 +9,7 @@ export default function BulkActionsMenu({
   hasItems,
   pageSelectable,
   busy,
-  mpvEnabled,
+  bulkPlaybackEnabled,
   onSelectAll,
   onSelectPage,
   onPlayPage,
@@ -46,20 +47,25 @@ export default function BulkActionsMenu({
         transformOrigin={{ vertical: 'top', horizontal: 'left' }}
         MenuListProps={{ dense: true, 'aria-label': label }}
       >
-        <MenuItem disabled={!hasItems || busy} onClick={() => runAction(onSelectAll)}>
-          {zh('全选', 'Select all')}
-        </MenuItem>
         <MenuItem disabled={!pageSelectable || busy} onClick={() => runAction(onSelectPage)}>
-          {zh('全选本页', 'Select page')}
+          {zh('选中本页', 'Select page')}
         </MenuItem>
         <MenuItem
-          disabled={!pageSelectable || !mpvEnabled || busy}
+          disabled={!pageSelectable || !bulkPlaybackEnabled || busy}
           onClick={() => runAction(onPlayPage)}
         >
-          {zh('使用 MPV 播放本页', 'Play page with MPV')}
+          <span className="flex-1">{zh('播放本页', 'Play page')}</span>
+          <PlayCircleOutlineRoundedIcon sx={{ ml: 2, fontSize: 22 }} />
         </MenuItem>
-        <MenuItem disabled={!hasItems || !mpvEnabled || busy} onClick={() => runAction(onPlayAll)}>
-          {zh('使用 MPV 播放全部', 'Play all with MPV')}
+        <MenuItem disabled={!hasItems || busy} onClick={() => runAction(onSelectAll)}>
+          {zh('选中全部', 'Select all')}
+        </MenuItem>
+        <MenuItem
+          disabled={!hasItems || !bulkPlaybackEnabled || busy}
+          onClick={() => runAction(onPlayAll)}
+        >
+          <span className="flex-1">{zh('播放全部', 'Play all')}</span>
+          <PlayCircleOutlineRoundedIcon sx={{ ml: 2, fontSize: 22 }} />
         </MenuItem>
       </Menu>
     </>

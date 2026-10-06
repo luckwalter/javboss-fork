@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ThumbnailQueue abstracts the ability to enqueue thumbnail generation tasks.
 // RegisterRoutes wires handlers onto the provided router.
 func RegisterRoutes(router gin.IRoutes) {
 	router.GET("/auth/extension-tokens", listExtensionTokens)
@@ -43,6 +42,8 @@ func RegisterRoutes(router gin.IRoutes) {
 	router.PATCH("/videos/:id/locations/:location_id", renameVideoLocation)
 	router.DELETE("/videos/:id/locations/:location_id", deleteVideoLocation)
 	router.POST("/videos/:id/play", incrementVideoPlayCount)
+	router.POST("/videos/:id/playback-sessions", createPlaybackSession)
+	router.PUT("/videos/:id/playback-sessions/:session_id", reportPlaybackSession)
 	router.POST("/videos/play", playVideoFile)
 	router.POST("/videos/playlist", playVideoPlaylist)
 	router.POST("/videos/open", openVideoFile)
@@ -109,6 +110,7 @@ func RegisterRoutes(router gin.IRoutes) {
 	router.GET("/jav/items/:id/sample-images/:index/:variant", getJavSampleImage)
 	router.GET("/jav/items/:id", getJavItem)
 	router.PUT("/jav/items/:id", updateJavItem)
+	router.DELETE("/jav/items/:id/videos", deleteJavVideos)
 	router.POST("/jav/tags", createJavTag)
 	router.POST("/jav/tags/scraped", createJavScrapedTag)
 	router.POST("/jav/tags/organize", organizeJavTags)

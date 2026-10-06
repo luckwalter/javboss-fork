@@ -2,24 +2,22 @@ import { useStore, videoSelectionKey } from '@/store'
 import { useShallow } from 'zustand/react/shallow'
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { zh } from '@/utils/i18n'
-import { confirmLargeMPVPlaylist } from '@/features/playback/model'
-import { playVideoPlaylist, deleteVideoLocation, fetchVideos } from '@/features/video/api'
+import { deleteVideoLocation, fetchVideos } from '@/features/video/api'
 import { getErrorMessage } from '@/utils/errors'
 import { removeTagFromVideos, addTagToVideos } from '@/features/tags/api'
 import { addJavTagToJavs } from '@/features/jav/api'
 
 export default function useVideoSelection({
-  mpvEnabled,
-  ensureMPVPlaylistAvailable,
+  bulkPlaybackEnabled,
+  ensurePlaylistAvailable,
   showCenterToast,
   showToast,
-  playVideosWithMPV,
+  playVideos,
 }) {
   const {
     selectedVideoIds,
     videos,
     selectedVideoMeta,
-    loadVideos,
     tags,
     clearSelection,
     loadJavTags,
@@ -35,7 +33,6 @@ export default function useVideoSelection({
       selectedVideoIds: state.selectedVideoIds,
       videos: state.videos,
       selectedVideoMeta: state.selectedVideoMeta,
-      loadVideos: state.loadVideos,
       tags: state.tags,
       clearSelection: state.clearSelection,
       loadJavTags: state.loadJavTags,
@@ -145,52 +142,30 @@ export default function useVideoSelection({
   }, [])
 
   const handlePlaySelection = useCallback(async () => {
-    if (selectionPlaying || !mpvEnabled) return
-    if (!ensureMPVPlaylistAvailable()) return
-    const targets = selectedList
-      .map((item) => {
-        const videoId = Number(item?.video_id || item?.video?.id)
-        const locationId = Number(item?.location_id || item?.video?.location_id || 0)
-        if (!Number.isFinite(videoId) || videoId <= 0) return null
-        return {
-          video_id: videoId,
-          location_id: Number.isFinite(locationId) && locationId > 0 ? locationId : 0,
-          title: item?.label || item?.video?.filename || `Video #${videoId}`,
-        }
-      })
-      .filter(Boolean)
-    if (targets.length !== selectedList.length || targets.length === 0) {
-      showCenterToast(
-        zh(
-          '无法播放：部分所选视频缺少文件信息',
-          'Cannot play: some selected videos are missing file information'
-        )
-      )
-      return
-    }
-    if (!confirmLargeMPVPlaylist(targets.length)) return
-
+    if (selectionPlaying || !bulkPlaybackEnabled) return
+    if (!ensurePlaylistAvailable()) return
+    const targets = selectedList.map((item) => ({
+      ...item.video,
+      id: item.video_id || item.video?.id,
+      location_id: item.location_id || item.video?.location_id,
+      filename: item.label || item.video?.filename,
+    }))
     setSelectionPlaying(true)
     try {
-      const result = await playVideoPlaylist(targets)
-      const count = Number(result?.count) || targets.length
-      setSelectionOpsOpen(false)
-      showToast(
-        zh(`已将 ${count} 个视频加入 MPV 播放列表`, `Added ${count} videos to the MPV playlist`)
-      )
+      if (await playVideos(targets)) setSelectionOpsOpen(false)
     } catch (err) {
-      console.error(zh('加入 MPV 播放列表失败', 'Failed to add to MPV playlist'), err)
+      console.error(zh('批量播放失败', 'Batch playback failed'), err)
       showCenterToast(getErrorMessage(err))
     } finally {
       setSelectionPlaying(false)
     }
   }, [
-    ensureMPVPlaylistAvailable,
-    mpvEnabled,
+    ensurePlaylistAvailable,
+    bulkPlaybackEnabled,
     selectedList,
     selectionPlaying,
     showCenterToast,
-    showToast,
+    playVideos,
   ])
 
   const handleDeleteSelection = useCallback(async () => {
@@ -248,25 +223,7 @@ export default function useVideoSelection({
       }
 
       if (deletedKeys.length > 0) {
-        const deletedSet = new Set(deletedKeys)
-        useStore.setState((state) => {
-          const nextIds = new Set(state.selectedVideoIds || [])
-          const nextMeta = { ...(state.selectedVideoMeta || {}) }
-          deletedSet.forEach((key) => {
-            nextIds.delete(key)
-            delete nextMeta[key]
-          })
-          const nextVideos = Array.isArray(state.videos)
-            ? state.videos.filter((item) => !deletedSet.has(videoSelectionKey(item)))
-            : state.videos
-          return {
-            videos: nextVideos,
-            selectedVideoIds: nextIds,
-            selectedVideoMeta: nextMeta,
-            total: Math.max(0, Number(state.total || 0) - deletedKeys.length),
-          }
-        })
-        await loadVideos({ force: true })
+        useStore.getState().removeVideoLocations(deletedKeys)
       }
 
       if (failed.length > 0) {
@@ -286,7 +243,7 @@ export default function useVideoSelection({
     } finally {
       setSelectionDeleting(false)
     }
-  }, [loadVideos, selectedList, selectionDeleting, showCenterToast, showToast])
+  }, [selectedList, selectionDeleting, showCenterToast, showToast])
 
   const handleSelectionTagsClose = () => {
     setSelectionTagsOpen(false)
@@ -503,18 +460,18 @@ export default function useVideoSelection({
   ])
 
   const handlePlayVideoPage = useCallback(async () => {
-    if (selectionPlaying || videoBulkActionBusy || !mpvEnabled) return
+    if (selectionPlaying || videoBulkActionBusy || !bulkPlaybackEnabled) return
     setSelectionPlaying(true)
     try {
-      await playVideosWithMPV(videos)
+      await playVideos(videos)
     } catch (err) {
       showCenterToast(getErrorMessage(err))
     } finally {
       setSelectionPlaying(false)
     }
   }, [
-    mpvEnabled,
-    playVideosWithMPV,
+    bulkPlaybackEnabled,
+    playVideos,
     selectionPlaying,
     showCenterToast,
     videoBulkActionBusy,
@@ -522,13 +479,13 @@ export default function useVideoSelection({
   ])
 
   const handlePlayAllVideos = useCallback(async () => {
-    if (selectionPlaying || videoBulkActionBusy || !mpvEnabled) return
-    if (!ensureMPVPlaylistAvailable()) return
+    if (selectionPlaying || videoBulkActionBusy || !bulkPlaybackEnabled) return
+    if (!ensurePlaylistAvailable()) return
     setSelectionPlaying(true)
     setVideoBulkActionBusy(true)
     try {
       const items = await fetchAllMatchingVideos()
-      await playVideosWithMPV(items)
+      await playVideos(items)
     } catch (err) {
       showCenterToast(getErrorMessage(err))
     } finally {
@@ -536,10 +493,10 @@ export default function useVideoSelection({
       setSelectionPlaying(false)
     }
   }, [
-    ensureMPVPlaylistAvailable,
+    ensurePlaylistAvailable,
     fetchAllMatchingVideos,
-    mpvEnabled,
-    playVideosWithMPV,
+    bulkPlaybackEnabled,
+    playVideos,
     selectionPlaying,
     showCenterToast,
     videoBulkActionBusy,

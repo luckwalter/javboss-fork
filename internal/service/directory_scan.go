@@ -41,6 +41,7 @@ type Summary struct {
 	Removed     int
 	Duration    time.Duration
 	Directories int
+	ReadErrors  int
 }
 
 // makePathKey 生成目录内相对路径的唯一索引键。
@@ -127,7 +128,7 @@ func runDirectoryScanWithSession(scanCtx context.Context, directory models.Direc
 		return nil, err
 	}
 	if scanned {
-		if err := hideUnprocessedVideoLocations(scanCtx, state.processedLocationIDs, summary, directory.ID); err != nil {
+		if err := deleteUnprocessedVideoLocations(scanCtx, state.processedLocationIDs, summary, directory); err != nil {
 			return nil, err
 		}
 		summary.Directories = 1
@@ -152,7 +153,7 @@ func runDirectoryScanWithSession(scanCtx context.Context, directory models.Direc
 		}
 	}
 	logging.Info(
-		"sync directory summary: id=%d path=%s scanned=%t files_seen=%d inserted=%d updated=%d removed=%d duration=%s",
+		"sync directory summary: id=%d path=%s scanned=%t files_seen=%d inserted=%d updated=%d removed=%d read_errors=%d duration=%s",
 		directory.ID,
 		directory.Path,
 		scanned,
@@ -160,6 +161,7 @@ func runDirectoryScanWithSession(scanCtx context.Context, directory models.Direc
 		summary.Inserted,
 		summary.Updated,
 		summary.Removed,
+		summary.ReadErrors,
 		summary.Duration,
 	)
 	return summary, nil
@@ -238,13 +240,19 @@ func walkAndReconcileVideoFiles(ctx context.Context, directory models.Directory,
 	normalizedRoot := filepath.Clean(directory.Path)
 	progress, _ := ctx.Value(directoryScanProgressKey{}).(*directoryScanProgress)
 	return filepath.WalkDir(normalizedRoot, func(candidatePath string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			logging.Error("walk directory entry failed, skip: root=%s path=%s err=%v", normalizedRoot, candidatePath, walkErr)
-			return nil
-		}
-
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if walkErr != nil {
+			if candidatePath == normalizedRoot {
+				return fmt.Errorf("walk directory entry %s: %w", candidatePath, walkErr)
+			}
+			summary.ReadErrors++
+			logging.Error("skip unreadable directory entry: path=%s err=%v", candidatePath, walkErr)
+			if entry != nil && entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 
 		if entry.IsDir() {
@@ -258,10 +266,9 @@ func walkAndReconcileVideoFiles(ctx context.Context, directory models.Directory,
 
 		info, err := entry.Info()
 		if err != nil {
-			if errors.Is(err, fs.ErrPermission) {
-				return nil
-			}
-			return err
+			summary.ReadErrors++
+			logging.Error("skip unreadable video file: path=%s err=%v", candidatePath, err)
+			return nil
 		}
 
 		// 计算相对路径，确保只处理目录内的文件（防止符号链接等越界）
@@ -284,23 +291,7 @@ func walkAndReconcileVideoFiles(ctx context.Context, directory models.Directory,
 			existingVideo := state.existingByID[existingLoc.VideoID]
 			if existingVideo != nil && existingVideo.Size == info.Size() && existingLoc.ModifiedAt.Equal(modTime) {
 				state.processedLocationIDs[existingLoc.ID] = struct{}{}
-				if existingLoc.IsDelete {
-					saved, err := db.UpsertVideoLocation(ctx, existingLoc.VideoID, directory.ID, relativePath, modTime)
-					if err != nil {
-						logging.Error("unhide video location failed, skip: path=%s err=%v", normalizedPath, err)
-						return nil
-					}
-					existingLoc.IsDelete = false
-					existingLoc.ModifiedAt = modTime
-					if saved != nil {
-						state.processedLocationIDs[saved.ID] = struct{}{}
-						state.existingLocationByPath[makePathKey(saved.DirectoryID, saved.RelativePath)] = saved
-						state.javLinks.Enqueue(saved.ID)
-					}
-					summary.Updated++
-				} else {
-					state.javLinks.Enqueue(existingLoc.ID)
-				}
+				state.javLinks.Enqueue(existingLoc.ID)
 				return nil
 			}
 		}
@@ -391,7 +382,7 @@ func upsertVideo(ctx context.Context, entry *FileEntry, state *syncState, summar
 		return nil
 	}
 	video.ModifiedAt = entry.ModifiedAt
-	common.ScreenshotManager.EnqueueForVideo(video)
+	common.ScreenshotManager.EnqueueThumbnail(video)
 	return nil
 }
 
@@ -410,23 +401,45 @@ func upsertLocationForEntry(ctx context.Context, video *models.Video, entry *Fil
 	return nil
 }
 
-// hideUnprocessedVideoLocations 隐藏本次成功扫描中未再次发现的旧文件位置。
-func hideUnprocessedVideoLocations(ctx context.Context, processedLocationIDs map[int64]struct{}, summary *Summary, directoryID int64) error {
-	locations, err := db.VideoLocationsByDirectory(ctx, directoryID)
+// deleteUnprocessedVideoLocations removes old locations only after confirming the paths are absent.
+func deleteUnprocessedVideoLocations(ctx context.Context, processedLocationIDs map[int64]struct{}, summary *Summary, directory models.Directory) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// An incomplete traversal cannot establish which old locations disappeared.
+	// Keep all of them until a later scan can read the entire directory.
+	if summary.ReadErrors > 0 {
+		logging.Error("skip stale video location cleanup after incomplete scan: id=%d path=%s read_errors=%d", directory.ID, directory.Path, summary.ReadErrors)
+		return nil
+	}
+	locations, err := db.VideoLocationsByDirectory(ctx, directory.ID)
 	if err != nil {
 		return err
 	}
 	if len(locations) == 0 {
 		return nil
 	}
+	// The root may have gone offline after traversal. Do not purge its locations.
+	root, err := os.Stat(directory.Path)
+	if err != nil {
+		return fmt.Errorf("check directory before deleting stale locations: %w", err)
+	}
+	if !root.IsDir() {
+		return fmt.Errorf("scan root is no longer a directory: %s", directory.Path)
+	}
 
 	staleIDs := make([]int64, 0, len(locations))
 	for _, loc := range locations {
-		if loc.IsDelete {
-			continue
-		}
 		if _, ok := processedLocationIDs[loc.ID]; ok {
 			continue
+		}
+		// A failed probe or write must not turn a present file into a deletion.
+		_, err := os.Lstat(filepath.Join(directory.Path, filepath.FromSlash(loc.RelativePath)))
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("check stale video location %d: %w", loc.ID, err)
 		}
 		staleIDs = append(staleIDs, loc.ID)
 	}
@@ -435,8 +448,8 @@ func hideUnprocessedVideoLocations(ctx context.Context, processedLocationIDs map
 		return nil
 	}
 
-	logging.Info("hiding stale video locations: count=%d", len(staleIDs))
-	if err := db.HideVideoLocationsByIDs(ctx, staleIDs); err != nil {
+	logging.Info("deleting stale video locations: count=%d", len(staleIDs))
+	if err := db.DeleteVideoLocationsByIDs(ctx, staleIDs); err != nil {
 		return err
 	}
 	summary.Removed += len(staleIDs)
