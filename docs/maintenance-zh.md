@@ -131,7 +131,7 @@ $D logs --tail 200 javboss | grep 'probe playback support error'
 ```
 佐证：同一作品的 `GET /videos/<id>/stream` = **206（直连能出数据）**，而 `GET /videos/<id>/streams` = **404**。两者矛盾 ⇒ 一定是探测/工具缺失，不是文件问题。
 
-**修复**（脚本：`scripts/maintenance/8_fix_ffprobe.sh`）
+**修复**（脚本：`scripts/maintenance/8_fix_ffprobe.py`，`--check` 只检测）
 ```sh
 D=/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker
 # 1) 从底座镜像取出 ffprobe/ffmpeg；本地备成 img/internal/bin/{ffprobe,ffmpeg}
@@ -153,7 +153,62 @@ $D commit javboss javboss-fork:2.1.2
 - QNAP `/tmp` 是 **64MB tmpfs**，极易写满。表现极具误导性：`docker cp` 反查报 `no space left on device`、curl 的 `-c cookie.jar` 悄悄写失败 → 后续请求 **401「需要登录后才能继续」**（看着像认证问题，其实是磁盘满）。诊断产物一律放 `/share/...`。
 - 容器名**不能以下划线开头**（`Invalid container name`），且这类错误极易被 `>/dev/null 2>&1` 吞掉，排查时先去掉重定向。
 
-## 10. 安全红线
+## 10. 容器重建命令模板（配置对齐版，2026-10-06 实战）
+
+**何时用**：换镜像 tag、清运行态残留、修配置漂移。中断服务约 15 秒。
+
+**重建前**（存档 + 检查目标镜像自包含，避免又踩第 9 节的 ffprobe 坑）：
+```sh
+D=/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker
+$D inspect javboss > /share/CACHEDEV1_DATA/Backup/javboss/javboss-inspect-$(date +%Y%m%d).json
+$D create --name chk javboss-fork:2.1.2          # 容器名不能以 _ 开头！
+$D cp chk:/app/internal/bin/ffprobe /share/chk_ffprobe && ls -l /share/chk_ffprobe   # 应 ~48MB
+$D rm -f chk
+```
+
+**重建**（参数逐条对齐 `docker inspect` 的结果，别凭记忆写）：
+```sh
+$D stop javboss && $D rm javboss
+$D run -d --name javboss \
+  --network host --restart unless-stopped \
+  -e JAVBOSS_CONTAINER=1 \
+  -e JAVBOSS_PROXY_HOST_GATEWAY=1 \
+  -e JAVBOSS_HOST_PATH_PREFIX=1 \
+  -e JAVBOSS_DISABLE_MPV=1 \
+  -e JAVBOSS_DISABLE_DESKTOP_INTEGRATION=1 \
+  -e JAVBOSS_USE_FFMPEG_SCREENSHOTS=1 \
+  -e HTTP_PROXY=http://192.168.2.175:3128 \
+  -e HTTPS_PROXY=http://192.168.2.175:3128 \
+  -e NO_PROXY=localhost,127.0.0.1,192.168.2.0/24 \
+  -e FFPROBE_PATH=/usr/local/bin/ffprobe \
+  -e FFMPEG_PATH=/usr/local/bin/ffmpeg \
+  -e TZ=Asia/Shanghai \
+  -v /share/CACHEDEV1_DATA/Container/javboss/data:/app/data \
+  -v /:/host:ro \
+  javboss-fork:2.1.2 ./javboss -port 8655
+```
+
+**重建后必验（三步）**：
+```sh
+$D ps --filter name=javboss --format '{{.Image}} {{.Status}}'   # Up
+python3 scripts/maintenance/9_verify_playback.py --deep         # 全量应 2243/2243 全 200
+$D logs javboss | grep -c 'probe playback support error'        # 必须为 0
+```
+
+**四个漏了就出问题的环境变量**：
+
+| 变量 | 值 | 漏了会怎样 |
+|---|---|---|
+| `JAVBOSS_HOST_PATH_PREFIX` | `1` | DB 存错路径 → 播放报「视频文件或所在目录不存在」 |
+| `JAVBOSS_CONTAINER` | `1` | 容器模式判定失效，ffprobe/路径逻辑走宿主分支 |
+| `HTTP_PROXY` / `HTTPS_PROXY` | squid `192.168.2.175:3128` | 刮削外网超时（NAS DNS 被污染） |
+| `TZ` | `Asia/Shanghai` | 日志与时间显示错位 |
+
+**配置基线**：`/share/CACHEDEV1_DATA/Container/javboss/docker-compose.yml` 已于 2026-10-06 对齐 2.1.2（旧版备份 `Backup/javboss/docker-compose.yml.bak-20261006`）。当前运行容器由 `docker run` 建立，参数与该文件一致；用 compose 重建前必须先 `stop` + `rm` 现有容器（同名冲突）。
+
+**数据目录整洁**：一次性调试脚本禁止长期留在 `Container/javboss/data/`（那是 `/app/data`，会随备份一起膨胀）。走 `scripts/maintenance/`，产物放 `/share/.../Backup/`。
+
+## 11. 安全红线
 
 - **凭据只走环境变量**（`NAS_PASS` 等，见 scripts/maintenance/nas_env.py），任何脚本/文档/提交里不得出现明文密码。
 - `scripts/maintenance/artifacts/` 含 DB 快照（全库数据），已 gitignore，**严禁提交/上传**。
