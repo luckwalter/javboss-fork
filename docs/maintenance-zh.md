@@ -80,11 +80,14 @@ docker run --rm -v <FORK>/src:/fork -v <FORK>/build:/out golang:1.25 sh /fork/bu
 # CGO_ENABLED=1（sqlite 必须）；产物替换镜像（见 Backup/javboss 的 Dockerfile 备份）
 ```
 
+> ⚠️ **底座版本必须与二进制源码同版本**：fork 镜像 =「本地编译的二进制 + 官方镜像底座（官方层太厚，只覆盖二进制层）」。若二进制来自 v2.1.1 而底座是 v2.1.0，会出现 ffmpeg/ffprobe 路径失配（底座 `/usr/local/bin` vs 代码硬编码 `/app/internal/bin`）→ 播放全线报「视频文件或所在目录不存在」。**见第 9 节**。升级官方时要么把底座同步换成同版本官方镜像，要么重跑 8 号脚本补齐。
+
 **验证清单**（升级后必做）：
 1. `go version -m <二进制>` 看 `vcs.revision`——判版本的硬证据，别信 tag。
 2. 容器 Up + 首页 200 + `GET /jav/GFAV-1/cover` 200（独立头像路由）+ `GET /jav/idols` 带 cookie 200。
-3. sqlite 抽查：`avatar_file` 总数、`avatar_code LIKE 'HD-%'` 数、中文名/罗马名/生日填充率（对比本手册第 7 节基线）。
-4. 确认 `web/dist` 未被官方构建覆盖（fork 前端零改动，但官方新版本可能重打前端）。
+3. **`GET /videos/<id>/streams` = 200**（少了这步，ffprobe 失配会静默潜伏到主人点播放才发现）。
+4. sqlite 抽查：`avatar_file` 总数、`avatar_code LIKE 'HD-%'` 数、中文名/罗马名/生日填充率（对比本手册第 7 节基线）。
+5. 确认 `web/dist` 未被官方构建覆盖（fork 前端零改动，但官方新版本可能重打前端）。
 
 ## 6. 备份与回滚
 
@@ -111,7 +114,46 @@ docker run --rm -v <FORK>/src:/fork -v <FORK>/build:/out golang:1.25 sh /fork/bu
 - **修图流程**：① 备份 DB ② 清空问题作品 `sample_images` ③ `POST /jav/items/<id>/sample-images` 触发重刮（provider 顺序 JavMenu→JavBus，**写回前会在 NAS 实测下载 detail 验证**，所以重刮回来的 detail 天然可达）④ 跑 `fix_sample_thumbs.py` 把 thumbnail 对齐 detail（BAD 列表=javbus/javdb/javmoo/javmenu/xcity/jdbstatic）⑤ 终扫 + 代理路由抽样。
 - DMM cid 不能靠猜：标准规则=番号小写补零 5 位（`ssni00272`），但 HODV 等带数字前缀（`5642hodv22044`）；DMM 搜索页对脚本返回 307。**用 resolve 接口重刮是唯一可靠路径**。
 
-## 9. 安全红线
+## 9. 播放故障「视频文件或所在目录不存在」（2026-10-06 实战）
+
+**症状**：网页点开视频 → 提示「视频文件或所在目录不存在」，但文件确实在（`ls` 可见、挂载正常）。
+
+**真因（三层，缺一不可）**
+1. JavBoss 容器模式下 ffprobe 路径**硬编码**：`internal/util/video.go` 的 `ContainerFFBinaryDir = "/app/internal/bin"`，`runtimeconfig.ContainerMode()` 为真时（`JAVBOSS_CONTAINER=1`）**只认 `lookup("/app/internal/bin/ffprobe")`，完全忽略 `FFPROBE_PATH` / `FFMPEG_PATH` 环境变量**。
+2. 官方镜像布局**随版本变过**：vX 早期把 ffmpeg/ffprobe 放 **`/usr/local/bin/`**（镜像 env 里 `FFPROBE_PATH=/usr/local/bin/ffprobe` 就是那代的痕迹）；v2.1.1 的 `Dockerfile` 改成 `COPY --from=ffmpeg-build /ffprobe ./internal/bin/ffprobe`（即 `/app/internal/bin/`）。
+3. fork 镜像是「**v2.1.1 源码编的二进制** + **v2.1.0 官方镜像底座**」→ 二进制找 `/app/internal/bin/ffprobe`，底座里只有 `/usr/local/bin/ffprobe` → 找不到。
+   `ProbePlaybackSupport` 抛出的 `os.ErrNotExist` 又被 `respondPlaybackError` 的 switch **优先命中 `case errors.Is(err, os.ErrNotExist)`**（排在 `strings.Contains(err, "ffprobe not found")` 的 503 分支之前）→ 被误分类成 404「视频文件或所在目录不存在」。**这是官方错误分类 bug，专门把人往"文件丢了/挂载坏了"的错方向带。**
+
+**一句话判别**（别再去查文件、挂载、DB 路径）
+```bash
+$D logs --tail 200 javboss | grep 'probe playback support error'
+# probe playback support error: ffprobe unavailable in Docker image at /app/internal/bin/ffprobe: ...
+```
+佐证：同一作品的 `GET /videos/<id>/stream` = **206（直连能出数据）**，而 `GET /videos/<id>/streams` = **404**。两者矛盾 ⇒ 一定是探测/工具缺失，不是文件问题。
+
+**修复**（脚本：`scripts/maintenance/8_fix_ffprobe.sh`）
+```sh
+D=/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker
+# 1) 从底座镜像取出 ffprobe/ffmpeg；本地备成 img/internal/bin/{ffprobe,ffmpeg}
+$D create --name tmpff ghcr.io/solr159/javboss:v2.1.0   # 容器名不能以 _ 开头！
+$D cp tmpff:/usr/local/bin/ffprobe ./img/internal/bin/ffprobe
+$D cp tmpff:/usr/local/bin/ffmpeg  ./img/internal/bin/ffmpeg
+$D rm -f tmpff
+# 2) 补进运行中的容器（/app/internal 不存在时用「拷父目录」写法，docker cp 会连目录一起建）
+$D cp ./img/internal javboss:/app/
+# 3) 重启才生效 —— ResolveFFprobePath 用 sync.Once 缓存，进程不重启永远拿旧结果！
+$D restart javboss
+# 4) 固化：commit 成带 ffprobe 的新镜像，重建容器时用它
+$D commit javboss javboss-fork:2.1.2
+```
+
+**根治原则**：**fork 镜像的底座必须与二进制源码同版本**。用 v2.1.1 二进制就配官方 v2.1.1 镜像（或按官方 v2.1.1 Dockerfile 全量构建）；沿用 v2.1.0 底座就必须自己补 `/app/internal/bin/{ffprobe,ffmpeg}`。重编镜像后**必测** `/videos/<id>/streams` 是否为 200。
+
+**顺手记录的两个坑**
+- QNAP `/tmp` 是 **64MB tmpfs**，极易写满。表现极具误导性：`docker cp` 反查报 `no space left on device`、curl 的 `-c cookie.jar` 悄悄写失败 → 后续请求 **401「需要登录后才能继续」**（看着像认证问题，其实是磁盘满）。诊断产物一律放 `/share/...`。
+- 容器名**不能以下划线开头**（`Invalid container name`），且这类错误极易被 `>/dev/null 2>&1` 吞掉，排查时先去掉重定向。
+
+## 10. 安全红线
 
 - **凭据只走环境变量**（`NAS_PASS` 等，见 scripts/maintenance/nas_env.py），任何脚本/文档/提交里不得出现明文密码。
 - `scripts/maintenance/artifacts/` 含 DB 快照（全库数据），已 gitignore，**严禁提交/上传**。

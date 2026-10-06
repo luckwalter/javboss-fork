@@ -28,6 +28,12 @@ export NAS_PASS='<QNAP SSH 密码>'   # 必填
 
 头像链路：0→1→2→3→4；资料链路：0→2→5→6→7。`match_util.py` 是名字归一化/匹配共用库。
 
+## 故障修复脚本（不属流水线，按需单跑）
+
+| 脚本 | 用途 |
+|---|---|
+| `8_fix_ffprobe.py` | 修「**视频文件或所在目录不存在**」播放故障：JavBoss 容器模式硬编码 `/app/internal/bin/{ffprobe,ffmpeg}`，底座镜像版本不同就会路径失配。`--check` 只检测；默认补齐 → 重启（sync.Once 缓存必须重启） → 验证 `/videos/<id>/streams`=200 → commit 固化。原理见 `docs/maintenance-zh.md` 第 9 节 |
+
 ## 原则（违反必翻车）
 
 1. **改库先备份再停容器**（步骤 4/7 已内置：`javboss.db.bak-<用途>-<日期>`）。
