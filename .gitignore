@@ -20,4 +20,8 @@ scripts/maintenance/artifacts/
 scripts/maintenance/__pycache__/
 
 # 本地构建日志（临时产物）
-_build_*.log
+_*.log
+
+# 本地临时检查产物（从镜像里 docker cp 出来的二进制、一次性探针脚本等）
+_chk_*
+_dbg_*

@@ -13,8 +13,8 @@
 环境变量：
   NAS_PASS       必填
   NAS_HOST / NAS_USER
-  BASE_IMAGE     底座镜像（默认 javboss-fork:2.1.2，即"上一版可用镜像"）
-  NEW_TAG        目标 tag（默认 javboss-fork:2.1.3）
+  BASE_IMAGE     底座镜像（默认 javboss-fork:2.2.0，即"上一版可用镜像"）
+  NEW_TAG        目标 tag（默认 javboss-fork:2.2.1）
   GO_IMAGE       编译镜像（默认 golang:1.25-bookworm）
 
 用法：
@@ -32,8 +32,8 @@ import nas_env
 
 D = nas_env.DOCKER
 FORK = nas_env.FORK
-BASE_IMAGE = os.environ.get("BASE_IMAGE", "javboss-fork:2.1.2")
-NEW_TAG = os.environ.get("NEW_TAG", "javboss-fork:2.1.3")
+BASE_IMAGE = os.environ.get("BASE_IMAGE", "javboss-fork:2.2.0")
+NEW_TAG = os.environ.get("NEW_TAG", "javboss-fork:2.2.1")
 GO_IMAGE = os.environ.get("GO_IMAGE", "golang:1.25-bookworm")
 
 

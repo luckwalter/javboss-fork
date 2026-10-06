@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/Solr159/JavBoss"><img alt="Upstream" src="https://img.shields.io/badge/upstream-Solr159%2FJavBoss-181717?logo=github&logoColor=white"></a>
-  <img alt="Based on" src="https://img.shields.io/badge/based%20on-v2.1.1%20(fde33e4)-1E88E5">
+  <img alt="Based on" src="https://img.shields.io/badge/based%20on-upstream%20main%20%405aa89f3-1E88E5">
   <img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-blue">
   <img alt="Go" src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white">
   <img alt="Docker" src="https://img.shields.io/badge/Docker-distroless-2496ED?logo=docker&logoColor=white">
@@ -36,7 +36,7 @@
 
 ## 这个 fork 做了什么
 
-> **代码层面只动 5 个文件 / +98 −2 行**（占官方 65,475 行 Go 代码的 **0.15%**），**前端零改动**。
+> **代码层面只动 10 个文件 / +293 −48 行**（占官方 68,321 行 Go 代码的 **0.4%**），**前端零改动**。
 > 改动面如此之小，是为了让「跟官方升级」永远保持低成本。
 
 | # | 类别 | 内容 | 落地形式 |
@@ -44,9 +44,10 @@
 | 1 | **功能增强** | 女优头像改用**独立高清人像**（1456 人中 1288 人已有），不再是「从某部作品的封面裁一块」 | 5 处源码改动 + goose 迁移 + 头像数据文件 |
 | 2 | **缺陷修复** | 容器模式下 ffprobe/ffmpeg 路径硬编码，导致**全部视频播放时报「视频文件或所在目录不存在」** | 源码修复 → [issue #1](https://github.com/luckwalter/javboss-fork/issues/1) |
 | 3 | **缺陷修复** | 播放探测失败被**误分类成 404**；`"ffprobe not found"` 判据是**死代码**；失败结果被 `sync.Once` **永久缓存** | 源码修复 → [issue #2](https://github.com/luckwalter/javboss-fork/issues/2) |
-| 4 | **运维工具链** | 11 个可复用脚本：资料补全 / 高清头像流水线 / 播放全量验证 / 一键编译出镜像 | [`scripts/maintenance/`](scripts/maintenance/) |
-| 5 | **运维手册** | 资料渠道清单、头像替换判据、踩坑 Top 12、跟官方升级流程、容器重建模板、安全红线 | [`docs/maintenance-zh.md`](docs/maintenance-zh.md) |
-| 6 | **功能详解** | 本 fork 每个特性的原理、数据、验证方式 | [`docs/fork-features-zh.md`](docs/fork-features-zh.md) |
+| 4 | **升级加固** | 迁移入口加 `goose.WithAllowMissing()`，与 fork 的 `2099` 迁移号段**成对使用**，避免跟官方升级后容器启动即 Fatal | 1 处源码改动（见 [第 5.1 节](#5-跟官方升级)） |
+| 5 | **运维工具链** | 12 个可复用脚本：资料补全 / 高清头像流水线 / 播放全量验证 / 一键编译出镜像 / 一键部署到 NAS | [`scripts/maintenance/`](scripts/maintenance/) |
+| 6 | **运维手册** | 资料渠道清单、头像替换判据、踩坑 Top 12、跟官方升级流程、容器重建模板、安全红线 | [`docs/maintenance-zh.md`](docs/maintenance-zh.md) |
+| 7 | **功能详解** | 本 fork 每个特性的原理、数据、验证方式 | [`docs/fork-features-zh.md`](docs/fork-features-zh.md) |
 
 **本分支不发布 Release、不分发二进制**——它只提供源码与运维脚本，成品镜像是本地构建的。
 
@@ -112,7 +113,9 @@
 | **修复 C** | `sync.Once` 缓存失败结果 → 改为**仅缓存成功**，失败下次重试 |
 
 > 修复提交：`ad880f4`（源码）+ `6a1b216`（文档）——即镜像 **`javboss-fork:2.1.3` 起生效**。
-> 已修复 ≥ v2.1.2 的历史镜像仍可用工具链里的 `8_fix_ffprobe.py` 做运行时规避。
+> 镜像版本沿革：`2.1.3`（修复落地）→ `2.2.0`（合并上游 `main` `5aa89f3`）→ **`2.2.1`**（迁移入口加 `WithAllowMissing`，当前基线）。
+> 已在 NAS 上跑过全量验证：**2243 / 2243 个视频可播、0 异常**。
+> 未修复的历史镜像（≤ v2.1.2）仍可用工具链里的 `8_fix_ffprobe.py` 做运行时规避。
 
 ---
 
@@ -142,7 +145,8 @@
 | 脚本 | 用途 |
 |---|---|
 | `9_verify_playback.py` | **全量**验证每个视频都可播（遍历逐个测 `/videos/<id>/streams`）。升级 / 重编镜像 / 动挂载后**必跑**；`--deep` 另抽测 `/stream` 与 m3u8 |
-| `10_build_fork_image.py` | **改完 Go 源码后一键出镜像**：Go 容器编译 → 生成两行 `Dockerfile.patch`（`FROM <上一版镜像>` + `COPY javboss /app/javboss`）→ `docker build`。用 `--skip-build` 可复用已有产物 |
+| `10_build_fork_image.py` | **改完 Go 源码后一键出镜像**：Go 容器编译 → 生成两行 `Dockerfile.patch`（`FROM <上一版镜像>` + `COPY javboss /app/javboss`）→ `docker build`。用 `--skip-build` 可复用已有产物。⚠️ 增量路线仅适用「只改了 Go」，**跟上游升级（前端也变了）请直接用仓库根的官方 `Dockerfile` 全量构建** |
+| `11_deploy_fork_image.py` | **把镜像推到 NAS 并安全重建容器**：`docker save` → SFTP 上传 → NAS `docker load` → 备份 DB → 停容器 → 按需清理 goose 撞号残留版本行 → **按 `docker inspect` 现读的真实配置重建**（不凭记忆写参数）。`--dry-run` 只打印计划 |
 | `8_fix_ffprobe.py` | 播放「文件不存在」故障的**运行时**修复（补齐 ffprobe + 重启 + commit 固化）。**仅用于 ≤ v2.1.2 的历史镜像**，2.1.3 起源码已根治 |
 | `nas_env.py` | 共享配置：连接、远端执行、上传脚本、路径常量——**新脚本请复用它** |
 
@@ -162,22 +166,30 @@ export NAS_PASS='<NAS SSH 密码>'       # 必填，不写进任何文件
 
 ## 4. 部署本分支
 
-本分支**没有预编译包**，成品镜像需要自己构建。四个步骤：
+本分支**不发布 Release、不推镜像**，成品镜像自己构建。
+
+> **版本现状**（2026-10-06 核实）：
+> 上游最新发布 = **v2.1.1**（`ghcr.io/solr159/javboss:v2.1.1`，也就是 `latest`），
+> 而上游 `main` 已经到 **`5aa89f3`**（含 #375 watch-time / #376 jav delete / #377 cover 修复 / #379 播放列表 四个**未发布**提交）。
+> **本分支已跟进到 `5aa89f3`** —— 所以在 ghcr 上**拉不到**更新版本，`5aa89f3` 的能力只能自己构建。
 
 ```bash
-# 1) 拉一份官方镜像当底座（顺带获得镜像内自带的 ffprobe/ffmpeg）
-docker pull ghcr.io/solr159/javboss:v2.1.1
+# 1) 全量构建（用仓库根目录自带的官方 Dockerfile，四段式）
+#    node 构建前端 → golang 构建后端 → 下载静态 ffmpeg/ffprobe → distroless 底座
+docker build -t javboss-fork:2.2.1 .
+#    走这条路前端会跟着上游一起更新，且不存在「底座版本 ≠ 源码版本」的耦合
 
-# 2) 编译源码并构建 fork 镜像（底座自带 ffmpeg，所以只覆盖二进制层）
+# 2) 推到 NAS 并按现读配置重建容器（自动备份 DB、按需清理迁移残留行）
 export NAS_PASS='<NAS SSH 密码>'
-python3 scripts/maintenance/10_build_fork_image.py
-#   产物：javboss-fork:<NEW_TAG>（默认 2.1.3）
+python3 scripts/maintenance/11_deploy_fork_image.py --image javboss-fork:2.2.1
 
-# 3) 用新镜像重建容器 —— 参数模板见 docs/maintenance-zh.md §10
-
-# 4) 全量验证「每个视频都能播」
+# 3) 全量验证「每个视频都能播」
 python3 scripts/maintenance/9_verify_playback.py --deep
 ```
+
+> 只改 Go 源码、前端没动时，可用增量路线 `10_build_fork_image.py` 省一次前端构建
+> （原理：`FROM <上一版镜像>` + `COPY javboss /app/javboss`）。
+> 但**跟上游升级时务必走全量构建**——只覆盖二进制层会丢掉上游的前端新功能。
 
 ### 重建容器时**不能漏**的 4 个环境变量
 
@@ -194,7 +206,7 @@ python3 scripts/maintenance/9_verify_playback.py --deep
 
 ## 5. 跟官方升级
 
-改动面只有 5 个文件，所以升级路径很短：
+改动面只有 10 个文件，所以升级路径很短：
 
 ```bash
 cd JavBoss-src
@@ -204,27 +216,55 @@ git log --oneline main..upstream/main                            # 看官方新�
 git merge upstream/main                                          # 预期零冲突
 ```
 
-**冲突检查重点**（只有这三处可能被官方改写）：
+**冲突检查重点**（只有这几处可能被官方改写）：
 `internal/db/jav.go`（若官方改了女优查询的 SELECT / Group，需手工合入 `COALESCE`）、
-`jav_cover_api.go` 与 `jav_idol_api.go`（若官方重写这两个接口，需重放 `lookupIdolAvatarFile` / `hasIdolAvatarFile`）。
+`jav_cover_api.go` 与 `jav_idol_api.go`（若官方重写这两个接口，需重放 `lookupIdolAvatarFile` / `hasIdolAvatarFile`）、
+`internal/util/video.go` 与 `internal/server/video_api.go`（若官方改播放探测/错误分类，需重放候选链回退与 `ErrFFToolMissing` 503 分类）。
 迁移文件是**新增文件**，不会冲突。
 
-升级后**必须**重编二进制（`10_build_fork_image.py`）——否则新官方代码不认 `avatar_code` / `avatar_file` 两列，女优头像会**静默退回**「作品封面裁切」（数据不丢，只影响显示）。
+### 5.1 迁移版本号的坑：fork 用 `2099` 号段 + `WithAllowMissing`
 
-> ⚠️ **镜像底座必须与二进制源码同版本**。这是本仓库踩过的真实血案：v2.1.1 的二进制去 `/app/internal/bin/` 找 ffprobe，v2.1.0 的底座把它放在 `/usr/local/bin/` → 播放全线 404。详见 [issue #1](https://github.com/luckwalter/javboss-fork/issues/1)。
+**goose 用「文件名数字前缀」当迁移唯一标识。** fork 的头像迁移曾经也是 `202610040001`，
+与上游 #375 新增的 `202610040001_add_watched_time.go` **撞号**，其中一个会被静默跳过。
+**所以 fork 自己的迁移一律用 `2099xxxxxxxx` 保留号段**（现为 `209901010001_add_jav_idol_avatar.go`）。
+
+2099 排在所有上游日期号段之后，于是**上游后续新增的迁移版本号恒小于它**，goose 默认会把它们判为
+`found N missing migrations before current version X` 并**直接报错退出**（容器 `Restarting (1)`）。
+因此 `internal/db/migrations.go` 里这行是**刚需**，与 2099 号段**成对使用**，删掉 = 上游下次发版后容器起不来：
+
+```go
+return goose.UpContext(ctx, db, migrationDir, goose.WithAllowMissing())
+```
+
+从 **≤ 2.1.3** 升级时还有一次性清理（旧库把 `202610040001` 记成「已执行」，会害得上游的
+`watched_ms` 列建不出来）：`scripts/maintenance/11_deploy_fork_image.py` 会自动判断
+`video.watched_ms` 是否缺失、缺失才删那一行，删完由 `WithAllowMissing` 补跑。
+完整说明见 [`docs/maintenance-zh.md` §5.1](docs/maintenance-zh.md)。
+
+升级后**必须**重编镜像——否则新官方代码不认 `avatar_code` / `avatar_file` 两列，
+女优头像会**静默退回**「作品封面裁切」（数据不丢，只影响显示）。推荐直接用官方 `Dockerfile` 全量构建：
+
+```bash
+docker build -t javboss-fork:<新tag> .
+```
+
+> ⚠️ **别再用「官方旧镜像底座 + 覆盖二进制」的增量做法跟大版本升级。** 这是本仓库踩过的真实血案：
+> v2.1.1 的二进制去 `/app/internal/bin/` 找 ffprobe，v2.1.0 的底座把它放在 `/usr/local/bin/` → 播放全线报错。
+> 详见 [issue #1](https://github.com/luckwalter/javboss-fork/issues/1)。走官方 `Dockerfile` 全量构建就没有这个耦合。
 
 ---
 
 ## 6. 仓库结构
 
 ```
-├── internal/                        # Go 后端（fork 只改了 5 个文件，见上）
-├── web/                             # 前端（fork 零改动，dist 沿用官方构建产物）
+├── internal/                        # Go 后端（fork 只改了 10 个文件，见上）
+├── web/                             # 前端（fork 零改动，随官方源码一起构建）
+├── Dockerfile                       # 上游：四段式构建（前端 → 后端 → 静态 ffmpeg → distroless）
 ├── docs/
 │   ├── maintenance-zh.md            # 【本分支】运维手册：渠道/判据/踩坑/升级/重建模板/安全红线
 │   └── fork-features-zh.md          # 【本分支】fork 功能详解
 ├── scripts/
-│   ├── maintenance/                 # 【本分支】运维工具链（11 脚本 + 共享库 + 说明）
+│   ├── maintenance/                 # 【本分支】运维工具链（12 脚本 + 共享库 + 说明）
 │   ├── cli/  install.sh  install.ps1        # 上游：安装器
 │   └── userscripts/                 # 上游：浏览器扩展
 ├── screenshot/                      # 上游：界面截图

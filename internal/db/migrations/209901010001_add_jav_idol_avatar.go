@@ -24,9 +24,16 @@ import (
 //   两个文件版本号相同时会在全局注册表里互相覆盖，导致其中一个被静默跳过。
 //   因此 fork 的迁移统一使用 2099 保留号段，与上游的日期号段彻底隔离，
 //   后续跟官方升级不会再撞车。
-//   ⚠️ 升级到本版本时，旧库需要把 goose_db_version 里的 202610040001 行清掉
+//
+//   ⚠️ 本号段必须与 internal/db/migrations.go 里的 goose.WithAllowMissing() **成对使用**：
+//   2099 排在一切上游日期号段之后，上游后续新增的迁移版本号恒小于本迁移，
+//   goose 默认视为 "missing migrations" 并直接报错退出；allowMissing 会把它们补跑。
+//   少了那一行，容器会在上游下次发版后启动即 Fatal。
+//
+//   ⚠️ 从 ≤2.1.3 升级到本版本时，旧库需要把 goose_db_version 里的 202610040001 行清掉
 //   （见 docs/maintenance-zh.md「跟官方升级」一节），否则上游的
-//   202610040001_add_watched_time 会被误判为「已执行」而跳过。
+//   202610040001_add_watched_time 会被误判为「已执行」而跳过，watched_ms 列建不出来。
+//   清掉后该迁移会由 allowMissing 补跑（它本身也是幂等的 addColumnIfMissing）。
 func init() {
 	goose.AddNamedMigrationContext("209901010001_add_jav_idol_avatar.go", addJavIdolAvatar, irreversibleMigration)
 }

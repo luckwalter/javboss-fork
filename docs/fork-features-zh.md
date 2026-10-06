@@ -7,15 +7,17 @@
 
 ## 0. 定位与边界
 
-本仓库是 `Solr159/JavBoss` 的个人维护分支。**上游是本体**，本分支只做三件事：
+本仓库是 `Solr159/JavBoss` 的个人维护分支。**上游是本体**，本分支只做四件事：
 
 | 类别 | 内容 |
 |---|---|
 | **加一个能力** | 女优头像 = 独立高清人像（上游没有这个概念） |
 | **修两个缺陷** | ① 容器模式工具路径硬编码 ② 播放错误误分类 / 死代码 / 永久缓存 |
-| **带一套工具** | `scripts/maintenance/`（11 脚本）+ 两份文档 |
+| **加固一处升级路径** | goose 迁移入口加 `WithAllowMissing()`，让 fork 的 `2099` 迁移号段不阻塞上游新迁移 |
+| **带一套工具** | `scripts/maintenance/`（12 脚本）+ 两份文档 |
 
-**改动量**：Go 代码 **5 个文件 / +98 −2 行**，占上游 65,475 行的 **0.15%**；前端 `web/` **零改动**。
+**改动量**：Go 代码 **10 个文件 / +293 −48 行**，占上游 68,321 行的 **0.4%**；前端 `web/` **零改动**。
+已跟进的上游基线 = **`main` @ `5aa89f3`**（含 #375/#376/#377/#379 四个未发布提交）。
 
 **刻意保持小改动面**的原因：让「跟官方升级」永远是一次 `git merge` 就能完成的事（见 §7）。
 
@@ -160,8 +162,31 @@ env(FFPROBE_PATH / FFMPEG_PATH)
 | 工具不存在 + 补齐工具（不重启） | 仍 404 | **自动恢复 200** |
 | 媒体文件真的不存在 | 404 | 404（正确，未变） |
 
-> 修复提交 `ad880f4`（源码）+ `6a1b216`（文档同步），镜像 **`javboss-fork:2.1.3`** 起生效。
+> 修复提交 `ad880f4`（源码）+ `6a1b216`（文档同步），镜像 **`javboss-fork:2.1.3`** 起生效，并随 **`2.2.0`** 延续。
 > ≤ v2.1.2 的历史镜像可用 `scripts/maintenance/8_fix_ffprobe.py` 做运行时规避。
+>
+> NAS 实测（`2.2.0`）：**2243 / 2243 个视频可播，0 异常**（`9_verify_playback.py --deep`）。
+
+### 2.3 迁移入口加固（跟官方升级不再"启动即崩"）
+
+**这不是上游的 bug，是 fork 特有的坑** —— fork 自己加过一个 goose 迁移，与上游撞了版本号。
+
+**背景**：goose 用「文件名数字前缀」当迁移唯一标识。fork 的头像迁移原本是 `202610040001_add_jav_idol_avatar.go`，
+而上游 #375 新增了同为 `202610040001` 的 `add_watched_time.go` —— 同号会在 goose 全局注册表里**互相覆盖**。
+
+**本 fork 的处理**：
+
+| 问题 | 做法 |
+|---|---|
+| 号段撞车 | fork 自己的迁移统一用 **`2099xxxxxxxx` 保留号段**（`209901010001_add_jav_idol_avatar.go`），与上游日期号段彻底隔离 |
+| 2099 排在上游之后 → 上游新迁移被 goose 判为 `missing migrations` 而**拒绝启动** | `internal/db/migrations.go` 加 **`goose.WithAllowMissing()`**，让 goose 把这类迁移**补跑**而不是报错。<br>依据 `goose/up.go`：`if option.allowMissing { migrationsToApply = missingMigrations }` |
+| 旧库残留撞号行 → 上游 `watched_ms` 列建不出来 | `11_deploy_fork_image.py` 按需清理：**只在 `video.watched_ms` 确实缺失时**才删 `202610040001` 那一行，删完由 `WithAllowMissing` 补跑（迁移幂等） |
+
+**为什么安全**：本项目所有迁移都幂等 —— `addColumnIfMissing` / `CREATE INDEX IF NOT EXISTS` /
+`columnExists` 早退，重复执行无副作用。所以「补跑」永远是正确的。
+
+> `2099` 号段与 `WithAllowMissing()` 是**成对约束**：删掉其中任何一个，上游下次发版后容器都会启动失败。
+> 依据与踩坑实录见 [`maintenance-zh.md` §5.1](maintenance-zh.md)。
 
 ---
 
@@ -217,7 +242,8 @@ env(FFPROBE_PATH / FFMPEG_PATH)
 | 脚本 | 输入 | 输出 / 判定 |
 |---|---|---|
 | `9_verify_playback.py` | NAS 的 JavBoss HTTP 端口 | 遍历全部视频，逐个测 `/videos/<id>/streams`。**判据**：`/stream`=206 且 `/streams`=200；前者 206 后者 404 ⇒ 就是工具路径失配 |
-| `10_build_fork_image.py` | `fork/src` 源码 | 编译 → `Dockerfile.patch`（`FROM <上一版镜像>` + `COPY javboss /app/javboss`）→ `docker build` |
+| `10_build_fork_image.py` | `fork/src` 源码 | 编译 → `Dockerfile.patch`（`FROM <上一版镜像>` + `COPY javboss /app/javboss`）→ `docker build`。**增量路线，仅适用「只改了 Go」** |
+| `11_deploy_fork_image.py` | 本地已构建好的镜像 | `save` → SFTP 上传 → NAS `load` → 备份 DB → 停容器 → 按需清理 goose 残留行 → 按 `docker inspect` 现读配置重建 |
 | `8_fix_ffprobe.py` | 运行中的容器 | 补 ffprobe/ffmpeg → 重启 → 验证 → `docker commit` 固化（**仅历史镜像用**） |
 
 `10_build_fork_image.py` 的环境变量：
@@ -228,7 +254,12 @@ env(FFPROBE_PATH / FFMPEG_PATH)
 | `NEW_TAG` | `javboss-fork:2.1.3` | 目标 tag |
 | `GO_IMAGE` | `golang:1.25-bookworm` | 编译用镜像 |
 
-> **为什么用增量两层 Dockerfile**：官方镜像层数多（19 层）且已自带 ffprobe/ffmpeg（48 MB），重建整条链既慢又容易搞错布局。只覆盖二进制层（`/app/javboss`）最快且最不容易踩 [issue #1](https://github.com/luckwalter/javboss-fork/issues/1) 的坑。
+> **两种构建路线怎么选**：
+> - **改 Go 源码、前端没动** → 用 `10_build_fork_image.py` 的增量两层 Dockerfile：底座已自带 ffprobe/ffmpeg（48 MB），
+>   只覆盖二进制层（`/app/javboss`）最快，也最不容易踩 [issue #1](https://github.com/luckwalter/javboss-fork/issues/1) 的坑。
+> - **跟上游升级（前端也可能变了）** → **必须**用仓库根的官方 `Dockerfile` 全量构建
+>   （`docker build -t javboss-fork:<tag> .`）。只覆盖二进制层会丢掉上游的前端新功能，
+>   而且全量构建后 ffprobe/ffmpeg 由 Dockerfile 放进 `/app/internal/bin/`，「底座版本 ≠ 源码版本」这个耦合**根本不存在**。
 
 ---
 
@@ -236,12 +267,30 @@ env(FFPROBE_PATH / FFMPEG_PATH)
 
 ### 4.1 构建镜像
 
+**跟上游升级 / 大版本前进（推荐）**：用仓库根的官方 `Dockerfile` 全量构建，前端后端一次到位。
+
 ```bash
-docker pull ghcr.io/solr159/javboss:v2.1.1     # 底座
+docker build -t javboss-fork:2.2.1 .
+```
+
+> 版本现状（2026-10-06）：上游最新发布 = **v2.1.1**（`ghcr.io/solr159/javboss:v2.1.1` = `latest`），
+> 但 `main` 已到 **`5aa89f3`**（#375/#376/#377/#379 未发布）。**本 fork 已跟进到 `5aa89f3`**，
+> 所以 ghcr 上拉不到更新版本，只能自己构建。
+
+**只改了 Go 源码**：走增量路线，省一次前端构建。
+
+```bash
 export NAS_PASS='<密码>'
 python3 scripts/maintenance/10_build_fork_image.py
 #   首次编译约 7 分钟（gocache 持久化后大幅加快）
 #   --skip-build 复用已有产物，只重新构建镜像
+```
+
+**推到 NAS 并重建容器**（自动备份 DB + 按需清理迁移残留行）：
+
+```bash
+export NAS_PASS='<密码>'
+python3 scripts/maintenance/11_deploy_fork_image.py --image javboss-fork:2.2.1
 ```
 
 ### 4.2 重建容器
@@ -286,9 +335,12 @@ python3 scripts/maintenance/10_build_fork_image.py
 | `jav_idol` 表 | 无头像列 | +2 列 +1 索引 |
 | 容器工具路径 | 硬编码单点 | **候选链回退** |
 | 工具缺失报错 | 404 误导 | **503 准确** |
-| 运维工具链 / 手册 | 无 | **11 脚本 + 2 文档** |
-| 代码差异 | — | **5 文件 / +98 −2 行（0.15%）** |
+| goose 迁移入口 | `UpContext` 默认（旧迁移缺失即 Fatal） | + `WithAllowMissing()`，缺失的旧迁移自动补跑 |
+| fork 自家迁移号段 | —（日期号段） | `209901010001`（2099 保留号段，与上游隔离） |
+| 运维工具链 / 手册 | 无 | **12 脚本 + 2 文档** |
+| 代码差异 | — | **10 文件 / +293 −48 行（0.4%）** |
 | 前端差异 | — | **0** |
+| 跟进的上游基线 | — | **`main` @ `5aa89f3`**（含 4 个未发布提交） |
 | Release / 二进制包 | ✅ 全平台 | ❌ 不发布，自行构建 |
 
 ---

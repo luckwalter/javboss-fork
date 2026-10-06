@@ -34,7 +34,8 @@ export NAS_PASS='<QNAP SSH 密码>'   # 必填
 |---|---|
 | `8_fix_ffprobe.py` | 修「**视频文件或所在目录不存在**」播放故障：**≤ v2.1.2 的历史镜像**中，JavBoss 容器模式把 ffprobe 路径硬编码为 `/app/internal/bin/{ffprobe,ffmpeg}`，底座镜像版本不同就路径失配。`--check` 只检测；默认补齐 → 重启（旧版 `sync.Once` 缓存必须重启） → 验证 `/videos/<id>/streams`=200 → commit 固化。**注：`javboss-fork:2.1.3` 起源码已修复该问题**（候选链回退 + 503 分类 + 失败不缓存），此脚本仅用于维护历史镜像。原理见 `docs/maintenance-zh.md` 第 9 节 |
 | `9_verify_playback.py` | 全量验证每个视频都可播（遍历 `/videos` 逐个测 `/videos/<id>/streams`）。**升级/重编镜像/动挂载后必跑**；`--deep` 另抽测 `/stream` 与 m3u8。只依赖标准库，本机直连 NAS HTTP 端口即可 |
-| `10_build_fork_image.py` | **改完 Go 源码后编译并构建新镜像**：golang 容器编译 `fork/src` → 生成两行 `Dockerfile.patch`（`FROM <上一版镜像>` + `COPY javboss /app/javboss`）→ `docker build`。底座镜像已自带 ffprobe/ffmpeg，所以只覆盖二进制即可。`--skip-build` 复用已有产物只构建。变量：`BASE_IMAGE` / `NEW_TAG` / `GO_IMAGE`。构建后按 `docs/maintenance-zh.md` §10 重建容器 |
+| `10_build_fork_image.py` | **改完 Go 源码后编译并构建新镜像**：golang 容器编译 `fork/src` → 生成两行 `Dockerfile.patch`（`FROM <上一版镜像>` + `COPY javboss /app/javboss`）→ `docker build`。底座镜像已自带 ffprobe/ffmpeg，所以只覆盖二进制即可。`--skip-build` 复用已有产物只构建。变量：`BASE_IMAGE` / `NEW_TAG` / `GO_IMAGE`。构建后按 `docs/maintenance-zh.md` §10 重建容器。**注：跟上游大版本升级（前端也变了）时请直接用官方 `Dockerfile` 全量构建，见 11 号脚本说明** |
+| `11_deploy_fork_image.py` | **把本地构建好的镜像推到 NAS 并安全重建容器**：`docker save` → SFTP 上传 → NAS `docker load` → 备份 DB → 停容器 → **按需清理 `goose_db_version` 里与上游撞号的残留版本行**（判据：`video.watched_ms` 缺失才算残留，否则保留；fork 迁移用 `2099` 号段，见 `docs/maintenance-zh.md` §5.1）→ 按 `docker inspect` **现读的真实配置**重建容器（不凭记忆写参数）。`--dry-run` 只打印计划，`--skip-push` 复用 NAS 上已有镜像。重建后接 `9_verify_playback.py --deep` |
 | `nas_env.py` | 共享配置（`NAS_*` / `FORK` / `DOCKER` / `connect()` / `sh()` / `put_script()`）——新增脚本请复用，别自己拼 paramiko |
 
 ## 原则（违反必翻车）

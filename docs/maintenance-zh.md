@@ -3,19 +3,37 @@
 > 本手册沉淀 2026-10-04 ~ 10-06 两轮实战（Gfriends 头像替换、高清艺术照替换、资料补全）的全部可复用知识。
 > 配套工具在 `scripts/maintenance/`（用法见其 README）。新会话/新环境接手，先读这份再动手。
 
-## 1. fork 改动清单（升级时重点看这 5 处）
+## 1. fork 改动清单（升级时重点看这几处）
 
-基线 = 官方 v2.1.1（commit fde33e4），fork commit 见 `git log`（`[FORK]` 前缀）：
+上游基线 = `main` @ `5aa89f3`（2026-10-06 合并，含 #375 watch-time / #376 jav delete / #377 cover 修复 / #379 播放列表）。
+fork 自己的提交见 `git log` 里的 `[FORK]` 前缀。
+
+**A. 女优独立高清头像**
 
 | 文件 | 改动 |
 |---|---|
-| `internal/db/migrations/209901010001_add_jav_idol_avatar.go` | jav_idol 加 `avatar_code`/`avatar_file` 两列 + 索引（**fork 迁移一律用 `2099` 保留号段**，见第 5 节） |
+| `internal/db/migrations/209901010001_add_jav_idol_avatar.go` | jav_idol 加 `avatar_code`/`avatar_file` 两列 + 索引（**2099 保留号段**，见 §5.1） |
 | `internal/models/jav.go` | 对应两个 GORM 字段 |
 | `internal/db/jav.go` | idol 查询 SELECT 加 `COALESCE(ji.avatar_code, ...)`，Group 同步 |
 | `internal/server/jav_cover_api.go` | `lookupIdolAvatarFile`：`/jav/<idol>/cover` 优先返回独立头像文件 |
 | `internal/server/jav_idol_api.go` | `hasIdolAvatarFile`：已有独立头像时防作品封面覆盖 |
 
-与官方 diff 共 5 文件 +98/−2（占官方 Go 代码 0.15%），跟官方升级预期零冲突。
+**B. 容器模式播放探测修复**（对应 issue #1 / #2）
+
+| 文件 | 改动 |
+|---|---|
+| `internal/util/video.go` | ffprobe/ffmpeg **候选链回退**；新增 `ErrFFToolMissing` 哨兵错误；仅成功时缓存 |
+| `internal/server/video_api.go` | 「工具缺失」改报 **503** 而非误导性的 404 |
+| `internal/manager/ffmpeg_tool_manager.go` | 工具路径解析同步候选链 |
+| `internal/util/video_test.go` | 上述行为的单元测试 |
+
+**C. 迁移入口加固**
+
+| 文件 | 改动 |
+|---|---|
+| `internal/db/migrations.go` | `goose.UpContext` 加 `WithAllowMissing()`（与 2099 号段**成对使用**，见 §5.1） |
+
+合计 **10 个 `.go` 文件 / +293 −48**（占官方 Go 代码 0.4%），跟官方升级预期零冲突。
 
 ## 2. 资料渠道清单（2026-10-06 实测）
 
@@ -67,20 +85,86 @@ cd JavBoss-src
 git remote add upstream https://github.com/Solr159/JavBoss.git   # 首次
 git fetch upstream
 git log --oneline main..upstream/main        # 看官方新提交
-git merge upstream/main                       # 预期零冲突（fork 仅 5 文件 +98/−2）
+git merge upstream/main                       # 预期零冲突（fork 仅 10 文件 +293/−48）
 ```
 
-冲突检查重点：`internal/db/jav.go`（官方若改 idol 查询的 SELECT/Group 需手工合入 COALESCE）、`jav_cover_api.go` / `jav_idol_api.go`（官方若重写这两个接口需重放 lookupIdolAvatarFile/hasIdolAvatarFile）。迁移文件是新增文件，不会冲突。
+> ⚠️ **每次合并后必须复查迁移**：上游若新增迁移文件，先 `ls internal/db/migrations/ | tail` 确认
+> **没有与 fork 的 `2099` 号段撞号**，再确认 `internal/db/migrations.go` 里的
+> `WithAllowMissing()` 还在（它是 2099 号段能正常工作的前提，见 §5.1）。
 
-重新编译部署（NAS 上无 Go 环境，用容器编译）：
+冲突检查重点：`internal/db/jav.go`（官方若改 idol 查询的 SELECT/Group 需手工合入 COALESCE）、`jav_cover_api.go` / `jav_idol_api.go`（官方若重写这两个接口需重放 lookupIdolAvatarFile/hasIdolAvatarFile）、
+`internal/util/video.go` / `internal/server/video_api.go`（官方若改播放探测或错误分类，需重放候选链回退与 `ErrFFToolMissing` 503 分类）。
 
-```bash
-# 源码上传到 NAS /share/.../javboss/fork/src 后：
-docker run --rm -v <FORK>/src:/fork -v <FORK>/build:/out golang:1.25 sh /fork/build.sh
-# CGO_ENABLED=1（sqlite 必须）；产物替换镜像（见 Backup/javboss 的 Dockerfile 备份）
+### 5.1 ⚠️ 迁移版本号：fork 用 `2099` 号段 + `WithAllowMissing`（必须成对）
+
+**goose 用「文件名数字前缀」作为迁移的唯一标识**（`AddNamedMigrationContext` → `NumericComponent(name)`）。
+两个迁移文件只要数字前缀相同，就会在全局注册表里**互相覆盖**，其中一个被静默跳过。
+
+这不是理论风险——2026-10-06 合并上游 main 时就真实撞上了：
+
+| | 版本号 | 文件 |
+|---|---|---|
+| fork（≤ 2.1.3） | `202610040001` | `add_jav_idol_avatar.go`（女优头像两列） |
+| 上游 #375 | `202610040001` | `add_watched_time.go`（watched_ms 两列） |
+
+**规则**：fork 自己的迁移一律用 `2099xxxxxxxx` 号段（现为 `209901010001_add_jav_idol_avatar.go`），
+与上游的日期号段彻底隔离，以后不会再撞号。新增 fork 迁移时挑一个 2099 段里没被占用的号即可。
+
+#### 配套约束：`goose.WithAllowMissing()` 必须一起用
+
+2099 排在一切上游日期号段之后，于是**上游后续新增的迁移版本号恒小于 `209901010001`**。
+goose 默认把这些「版本号低于已应用最高版本、但没执行过」的迁移判为
+`found N missing migrations before current version X`，并**直接报错退出**（容器 `Restarting (1)`）。
+开了 `WithAllowMissing()` 后 goose 会把它们放进 `migrationsToApply` 正常补跑
+（依据 `goose/up.go`：`if option.allowMissing { migrationsToApply = missingMigrations }`）。
+
+所以 `internal/db/migrations.go` 里这一行是**刚需**，删掉 = 上游下次发版后容器起不来：
+
+```go
+return goose.UpContext(ctx, db, migrationDir, goose.WithAllowMissing())
 ```
 
-> ⚠️ **底座版本必须与二进制源码同版本**：fork 镜像 =「本地编译的二进制 + 官方镜像底座（官方层太厚，只覆盖二进制层）」。若二进制来自 v2.1.1 而底座是 v2.1.0，会出现 ffmpeg/ffprobe 路径失配（底座 `/usr/local/bin` vs 代码硬编码 `/app/internal/bin`）→ 播放全线报「视频文件或所在目录不存在」。**见第 9 节**。升级官方时要么把底座同步换成同版本官方镜像，要么重跑 8 号脚本补齐。
+前提是所有迁移幂等 —— 本项目全部走 `addColumnIfMissing` / `CREATE INDEX IF NOT EXISTS` /
+`columnExists` 早退，重复执行无副作用。
+
+#### 从 ≤ 2.1.3 升级时的一次性清理
+
+旧库把 `202610040001` 记成「已执行」（那其实是 fork 头像迁移的行），于是上游的
+`202610040001_add_watched_time` 被误判为已应用而**跳过**，`watched_ms` 列根本建不出来 →
+上游 watch-time 功能直接报 SQL 错误。
+
+```sql
+-- 只在这一行确实是残留（video.watched_ms 缺失）时才删；先备份 DB、先停容器（防 WAL 竞态）
+DELETE FROM goose_db_version WHERE version_id = 202610040001;
+```
+
+删完由 `WithAllowMissing` 自动补跑该迁移（幂等）。
+工具 `scripts/maintenance/11_deploy_fork_image.py` 已内置判据：**先查 `video.watched_ms` 是否存在**，
+缺失才删、存在则保留 —— 所以重复部署是安全的空操作。
+
+> **踩坑实录：删行与重启的顺序会要命。** 若 dbMax 已经是 `209901010001` 再回头删
+> `202610040001`，**没有 allowMissing 的旧镜像**会卡死在
+> `found 1 missing migrations before current version 209901010001`。
+> 2026-10-06 因此抢修过一次（手工补 `watched_ms` 两列 + 补回版本行）。正解就是本节的 allowMissing。
+
+重新编译部署（NAS 上没有 Go/node 环境，一律用容器）：
+
+- **全量重建镜像（推荐，跟上游大版本升级时用）**：直接在源码目录跑官方 `Dockerfile`，
+  四段式（前端 node 构建 + Go 构建 + 下载静态 ffmpeg + distroless 底座）：
+
+  ```bash
+  docker build -t javboss-fork:<新tag> .
+  ```
+
+  这样前端 `web/dist` 会跟着上游前端改动一起更新——**上游改前端时必须走这条路**，
+  只覆盖二进制层会导致新功能的 UI 缺失。
+
+- **只改 Go 源码时（增量）**：`scripts/maintenance/10_build_fork_image.py`
+  （`FROM <上一版镜像>` + `COPY javboss /app/javboss`，省一次前端构建）。
+
+> ⚠️ **底座版本必须与二进制源码同版本**（增量构建路线）：fork 镜像 =「本地编译的二进制 + 官方镜像底座」。
+> 若二进制来自 v2.1.1 而底座是 v2.1.0，会出现 ffmpeg/ffprobe 路径失配（底座 `/usr/local/bin` vs 代码硬编码 `/app/internal/bin`）→ 播放全线报「视频文件或所在目录不存在」。**见第 9 节**。
+> 走全量构建路线就没有这个耦合。
 
 **验证清单**（升级后必做）：
 1. `go version -m <二进制>` 看 `vcs.revision`——判版本的硬证据，别信 tag。
@@ -120,6 +204,11 @@ docker run --rm -v <FORK>/src:/fork -v <FORK>/build:/out golang:1.25 sh /fork/bu
 > - 容器模式不再只认 `/app/internal/bin`，改为候选链 `env(FFPROBE_PATH/FFMPEG_PATH)` → `/app/internal/bin` → `/usr/local/bin` → `PATH`
 > - 「工具缺失」不再被误报成 404，改为 **503「缺少浏览器播放所需组件」**（新增哨兵错误 `util.ErrFFToolMissing`，并把该判定排到 `os.ErrNotExist` 之前）
 > - `ResolveFFprobePath` 改为**仅成功时缓存**，补齐工具后**无需重启进程**即可恢复
+>
+> **进一步（2026-10-06 深夜，`javboss-fork:2.2.0` 起）**：跟上游 main 升级时改为
+> **按官方 `Dockerfile` 全量构建**（不再用「官方底座 + 覆盖二进制」的增量做法），
+> ffprobe/ffmpeg 由 Dockerfile 放进 `/app/internal/bin/`，**「底座版本 ≠ 源码版本」这个耦合根本不存在了**。
+> 候选链回退仍然保留，作为对自行改造镜像者的兜底。
 >
 > 因此下面这套**运行时规避手段仅适用于 ≤ v2.1.2 的历史镜像**；排障思路（判别方法）仍然通用。
 
@@ -168,7 +257,7 @@ $D commit javboss javboss-fork:2.1.2
 ```sh
 D=/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker
 $D inspect javboss > /share/CACHEDEV1_DATA/Backup/javboss/javboss-inspect-$(date +%Y%m%d).json
-$D create --name chk javboss-fork:2.1.3          # 容器名不能以 _ 开头！
+$D create --name chk javboss-fork:2.2.1          # 容器名不能以 _ 开头！
 $D cp chk:/app/internal/bin/ffprobe /share/chk_ffprobe && ls -l /share/chk_ffprobe   # 应 ~48MB
 $D rm -f chk
 ```
@@ -187,13 +276,16 @@ $D run -d --name javboss \
   -e HTTP_PROXY=http://192.168.2.175:3128 \
   -e HTTPS_PROXY=http://192.168.2.175:3128 \
   -e NO_PROXY=localhost,127.0.0.1,192.168.2.0/24 \
-  -e FFPROBE_PATH=/usr/local/bin/ffprobe \
-  -e FFMPEG_PATH=/usr/local/bin/ffmpeg \
+  -e FFPROBE_PATH=/app/internal/bin/ffprobe \
+  -e FFMPEG_PATH=/app/internal/bin/ffmpeg \
   -e TZ=Asia/Shanghai \
   -v /share/CACHEDEV1_DATA/Container/javboss/data:/app/data \
   -v /:/host:ro \
-  javboss-fork:2.1.3 ./javboss -port 8655
+  javboss-fork:2.2.1 ./javboss -port 8655
 ```
+
+> **优先用 `scripts/maintenance/11_deploy_fork_image.py`**：它会从 `docker inspect` 现读当前容器的真实配置再重建，
+> 不会因为漏写某个环境变量而踩坑；上表是手工重建时对照用。
 
 **重建后必验（三步）**：
 ```sh
