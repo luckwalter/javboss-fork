@@ -33,6 +33,7 @@ export NAS_PASS='<QNAP SSH 密码>'   # 必填
 | 脚本 | 用途 |
 |---|---|
 | `8_fix_ffprobe.py` | 修「**视频文件或所在目录不存在**」播放故障：JavBoss 容器模式硬编码 `/app/internal/bin/{ffprobe,ffmpeg}`，底座镜像版本不同就会路径失配。`--check` 只检测；默认补齐 → 重启（sync.Once 缓存必须重启） → 验证 `/videos/<id>/streams`=200 → commit 固化。原理见 `docs/maintenance-zh.md` 第 9 节 |
+| `9_verify_playback.py` | 全量验证每个视频都可播（遍历 `/videos` 逐个测 `/videos/<id>/streams`）。**升级/重编镜像/动挂载后必跑**；`--deep` 另抽测 `/stream` 与 m3u8。只依赖标准库，本机直连 NAS HTTP 端口即可 |
 
 ## 原则（违反必翻车）
 
