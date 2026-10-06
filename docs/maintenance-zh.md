@@ -103,7 +103,15 @@ docker run --rm -v <FORK>/src:/fork -v <FORK>/build:/out golang:1.25 sh /fork/bu
 - `jav_idol_alias` 11 条（维基判定的改名关系）；`video.jav_scrape_override=':skip'` 锁 7627 条防重刮。
 - NAS crontab：`30 4 * * *` 清 `.@__thumb`、`40 4 * * *` fix_sample_thumbs.sh。
 
-## 8. 安全红线
+## 8. 样品图排障（2026-10-06 实战沉淀）
+
+- **渲染机制**：前端 `JavSampleImageGrid` 不用 DB 原始 URL，只按元素个数生成 `/jav/items/<id>/sample-images/<idx>/thumbnail|detail`，由后端 `getJavSampleImage`（`internal/server/jav_sample_image_api.go`）代抓并 `Cache-Control: private, max-age=86400`。→ **破图充要条件 = NAS 后端抓不到源 URL（返 502）**；排查只看 NAS 侧连通性，别被浏览器行为带偏。
+- **图床可用性（NAS 视角）**：`pics.dmm.co.jp` / `awsimgsrc.dmm.co.jp` / `image.mgstage.com` ✅；`c0.jdbstatic.com`（javdb 图床）/ `www.javbus.com/pics` ❌（CF 挡 NAS 直连与代理两条路，DNS/TLS 正常但拿不到响应）。
+- **DMM 占位图判别（关键）**：无图 URL 返回 **302 → `now_printing`**，有图直接 200。占位图是合法 image，能骗过 `resolveJavSampleImages` 的验证 → 全库排查法：对每作品第一张 URL 测状态码（不跟随重定向），非 200 的作品其样图全为占位，`sample_images` 置空即可（前端不渲染该区块）。工具：`check_noimage.py`（10 线程全库约 4 分钟）；`code=0` 要重试 3 次再判死（可能是网络抖动）。
+- **修图流程**：① 备份 DB ② 清空问题作品 `sample_images` ③ `POST /jav/items/<id>/sample-images` 触发重刮（provider 顺序 JavMenu→JavBus，**写回前会在 NAS 实测下载 detail 验证**，所以重刮回来的 detail 天然可达）④ 跑 `fix_sample_thumbs.py` 把 thumbnail 对齐 detail（BAD 列表=javbus/javdb/javmoo/javmenu/xcity/jdbstatic）⑤ 终扫 + 代理路由抽样。
+- DMM cid 不能靠猜：标准规则=番号小写补零 5 位（`ssni00272`），但 HODV 等带数字前缀（`5642hodv22044`）；DMM 搜索页对脚本返回 307。**用 resolve 接口重刮是唯一可靠路径**。
+
+## 9. 安全红线
 
 - **凭据只走环境变量**（`NAS_PASS` 等，见 scripts/maintenance/nas_env.py），任何脚本/文档/提交里不得出现明文密码。
 - `scripts/maintenance/artifacts/` 含 DB 快照（全库数据），已 gitignore，**严禁提交/上传**。
