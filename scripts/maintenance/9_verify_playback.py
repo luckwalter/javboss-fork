@@ -16,11 +16,19 @@
   export JAVBOSS_PASS=admin             # 可选
   python3 9_verify_playback.py
   python3 9_verify_playback.py --deep   # 额外抽测前 20 个的 /stream 与 m3u8
+
+资源观测（2026-10-07 起，只读不改判据）：
+  验证期间每 60s 采样一次 GET /system/resources（上游 #369 资源监控接口），
+  结束时输出 CPU/RSS/goroutine 摘要与 data_disk 磁盘水位（>90% 标红）。
+  接口不可用（旧镜像）时自动跳过，不影响验证本身。
+  用途：建立「验证期间的资源基线」，部署/升级后对比可发现性能退化。
 """
 import concurrent.futures as cf
 import json
 import os
 import sys
+import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -62,10 +70,66 @@ def fetch_ids(cookie):
     return [it["id"] for it in items if isinstance(it, dict) and it.get("id")]
 
 
+# ---------- 资源观测（只读，接口不可用时自动跳过） ----------
+
+def sample_resources(cookie):
+    try:
+        req = urllib.request.Request(BASE + "/system/resources", headers={"Cookie": cookie})
+        obj = json.loads(opener.open(req, timeout=15).read())
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+
+def start_resource_sampler(cookie, interval=60):
+    """后台线程周期采样；返回 (samples 列表, stop 函数)。接口不可用则返回 ([], noop)。"""
+    samples = []
+    if sample_resources(cookie) is None:
+        print("资源观测: /system/resources 不可用（旧镜像?），跳过")
+        return samples, lambda: None
+
+    def run():
+        while not stop.is_set():
+            s = sample_resources(cookie)
+            if s:
+                samples.append(s)
+            stop.wait(interval)
+
+    stop = threading.Event()
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    return samples, stop.set
+
+
+def print_resource_summary(samples):
+    if not samples:
+        return
+    proc = [s.get("process") or {} for s in samples]
+    rss = [p.get("rss_bytes") for p in proc if p.get("rss_bytes")]
+    gor = [p.get("goroutines") for p in proc if p.get("goroutines")]
+    disks = [s.get("data_disk") or {} for s in samples if s.get("data_disk")]
+    print("-" * 62)
+    print("资源观测（%d 次采样，仅服务端进程）:" % len(samples))
+    if rss:
+        print("  RSS 内存 : %.1f ~ %.1f MB" % (min(rss) / 1048576, max(rss) / 1048576))
+    if gor:
+        print("  goroutine: %d ~ %d" % (min(gor), max(gor)))
+    for d in disks[-1:]:
+        pct = d.get("used_percent") or 0
+        flag = "  <-- ⚠️ 磁盘水位告警(>90%)" if pct > 90 else ""
+        print("  data_disk: %.1f%% used (%.1f / %.0f GB)%s"
+              % (pct, d.get("used_bytes", 0) / 2**30, d.get("total_bytes", 0) / 2**30, flag))
+    # 首尾对比看增长趋势（验证是只读负载，RSS 不应持续上涨）
+    if len(rss) >= 3 and rss[-1] > rss[0] * 1.5:
+        print("  ⚠️ RSS 较验证开始上涨超过 50%%（%.1f -> %.1f MB），建议 docker logs 查异常"
+              % (rss[0] / 1048576, rss[-1] / 1048576))
+
+
 def main():
     ck = login()
     ids = fetch_ids(ck)
     print("列表视频数: %d" % len(ids))
+    samples, stop_sampler = start_resource_sampler(ck)
 
     bad = []
 
@@ -77,6 +141,8 @@ def main():
         for vid, s, b in ex.map(probe, ids):
             if s != 200:
                 bad.append((vid, s, b[:150].decode("utf-8", "replace")))
+    stop_sampler()
+    print_resource_summary(samples)
 
     print("=" * 62)
     print("可播放(streams=200): %d / %d" % (len(ids) - len(bad), len(ids)))

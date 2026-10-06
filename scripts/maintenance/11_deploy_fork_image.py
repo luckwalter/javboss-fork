@@ -36,6 +36,7 @@ import os
 import posixpath
 import sys
 import time
+import urllib.request
 
 import nas_env
 
@@ -129,6 +130,35 @@ def die(msg):
     sys.exit("[!] " + msg)
 
 
+def snapshot_resources(tag):
+    """部署前后各采一份资源快照（GET /system/resources，只读）。
+    旧镜像无此接口时静默跳过；本机直连 NAS HTTP 端口，不走代理。"""
+    base = "http://%s:%s" % (os.environ.get("NAS_HOST", "192.168.1.10"),
+                             os.environ.get("JAVBOSS_PORT", "8655"))
+    pw = os.environ.get("JAVBOSS_PASS", "admin")
+    try:
+        op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        req = urllib.request.Request(base + "/auth/login",
+                                     data=json.dumps({"password": pw}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        with op.open(req, timeout=10) as r:
+            ck = "; ".join(c.split(";")[0] for c in (r.headers.get_all("Set-Cookie") or []))
+        req = urllib.request.Request(base + "/system/resources", headers={"Cookie": ck})
+        with op.open(req, timeout=15) as r:
+            s = json.loads(r.read())
+        p, d = s.get("process") or {}, s.get("data_disk") or {}
+        rss = p.get("rss_bytes")
+        print("  资源快照[%s]: rss=%s goroutines=%s uptime=%ss data_disk=%.1f%% used"
+              % (tag,
+                 "%.1fMB" % (rss / 1048576) if rss else "?",
+                 p.get("goroutines"), p.get("uptime_seconds"),
+                 d.get("used_percent") or 0))
+        return s
+    except Exception:
+        print("  资源快照[%s]: 接口不可用，跳过" % tag)
+        return None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--image", required=True, help="要部署的本地镜像 tag，例如 javboss-fork:2.2.1")
@@ -164,6 +194,9 @@ def main():
         die("本地没有镜像 %s，请先跑 10_build_fork_image.py 或 docker build" % IMG)
     size = json.loads(rc.stdout)[0].get("Size", 0)
     print("[0] 本地镜像存在，%.0f MB" % (size / 1024 / 1024))
+    if not args.dry_run:
+        print("[0b] 部署前资源快照（GET /system/resources）:")
+        snapshot_resources("部署前")
 
     cli = nas_env.connect()
 
@@ -278,6 +311,9 @@ def main():
         print("    当前状态: %s" % o.strip())
 
     cli.close()
+    if not args.dry_run:
+        print("[8] 部署后资源快照（与新镜像冷启动状态对比部署前）:")
+        snapshot_resources("部署后")
     print()
     print("完成。请接着跑：")
     print("  NAS_HOST=%s python3 scripts/maintenance/9_verify_playback.py --deep" % nas_env.NAS_HOST)

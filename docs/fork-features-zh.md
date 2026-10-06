@@ -241,9 +241,9 @@ env(FFPROBE_PATH / FFMPEG_PATH)
 
 | 脚本 | 输入 | 输出 / 判定 |
 |---|---|---|
-| `9_verify_playback.py` | NAS 的 JavBoss HTTP 端口 | 遍历全部视频，逐个测 `/videos/<id>/streams`。**判据**：`/stream`=206 且 `/streams`=200；前者 206 后者 404 ⇒ 就是工具路径失配 |
+| `9_verify_playback.py` | NAS 的 JavBoss HTTP 端口 | 遍历全部视频，逐个测 `/videos/<id>/streams`。**判据**：`/stream`=206 且 `/streams`=200；前者 206 后者 404 ⇒ 就是工具路径失配。验证期间每 60s 采样资源接口，输出 RSS/goroutine/磁盘水位摘要 |
 | `10_build_fork_image.py` | `fork/src` 源码 | 编译 → `Dockerfile.patch`（`FROM <上一版镜像>` + `COPY javboss /app/javboss`）→ `docker build`。**增量路线，仅适用「只改了 Go」** |
-| `11_deploy_fork_image.py` | 本地已构建好的镜像 | `save` → SFTP 上传 → NAS `load` → 备份 DB → 停容器 → 按需清理 goose 残留行 → 按 `docker inspect` 现读配置重建 |
+| `11_deploy_fork_image.py` | 本地已构建好的镜像 | `save` → SFTP 上传 → NAS `load` → 备份 DB → 停容器 → 按需清理 goose 残留行 → 按 `docker inspect` 现读配置重建；部署前后各打一份资源快照 |
 | `8_fix_ffprobe.py` | 运行中的容器 | 补 ffprobe/ffmpeg → 重启 → 验证 → `docker commit` 固化（**仅历史镜像用**） |
 
 `10_build_fork_image.py` 的环境变量：

@@ -11,6 +11,19 @@
 
 ---
 
+## 工具链动态（不发新镜像，只改维护脚本）
+
+- **2026-10-07 观测接口接入**：上游 #357（数据源可用性）与 #369（资源监控）两个后端 API 接进维护脚本——
+  ① `9_verify_playback.py` 验证期间每 60s 采样 `GET /system/resources`，输出 RSS/goroutine/磁盘水位摘要（>90% 告警）；
+  ② `11_deploy_fork_image.py` 部署前后各打一份资源快照；
+  ③ 样品图自愈脚本（NAS cron `fix_sample_thumbs.py`，仓库外）坏源名单动态化：调 `GET /jav/providers`
+  （必要时 `POST /jav/providers/<数字id>/availability`）探测，`status=ok` 的 provider 本轮解封，
+  其余沿用静态名单；API 不可达回退静态名单，幂等性不变。
+  线上验证：动态判定 `javbus/javmenu=ok(解封)、javdb=not_found(坏)`，全量修复 `changed_rows=0`；
+  9 号全量验证 `2243/2243` + 资源观测 7 次采样（RSS 89~121MB，data_disk 24.4%）。
+
+---
+
 ## 镜像 tag ↔ 底座 ↔ 二进制源码 对照
 
 | fork 镜像 tag | 发布日期 | 底座 | 二进制源码（上游基线） | 状态 |
