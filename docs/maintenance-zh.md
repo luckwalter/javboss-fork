@@ -312,3 +312,16 @@ $D logs javboss | grep -c 'probe playback support error'        # 必须为 0
 - **凭据只走环境变量**（`NAS_PASS` 等，见 scripts/maintenance/nas_env.py），任何脚本/文档/提交里不得出现明文密码。
 - `scripts/maintenance/artifacts/` 含 DB 快照（全库数据），已 gitignore，**严禁提交/上传**。
 - GitHub 推送用 SSH key；密码已在会话中暴露过的账号应改密并改用 PAT。
+
+## 12. 发版清单（每个 fork 版本迭代必做，一步都不许省）
+
+> 这是**硬性流程**：从 `2.2.1` 之后，每次出新镜像都必须走完本清单。
+> 版本沿革正文写在 `docs/CHANGELOG.md`（条目格式照抄现有版本）。
+
+1. **定 tag**：新版本 = 上一版 tag + 0.0.1；**tag ↔ 源码必须一一对应**，绝不复用旧 tag 装新代码（2.1.x 时代「底座≠源码」的教训，见 §9）。
+2. **验证先行**：`9_verify_playback.py --deep` 全量可播数 = 总数（当前基线 2243），异常 0；不达标不许发布。
+3. **写 CHANGELOG**：`docs/CHANGELOG.md` 顶部插入新条目 + 更新「镜像 tag ↔ 底座 ↔ 二进制源码 对照表」，必含：源码 commit、构建方式（全量/增量）、改了什么/为什么、修复的 issue、验证数字。
+4. **同步文档基线**：README 徽章与部署命令里的镜像 tag、`maintenance-zh.md` / `fork-features-zh.md` 里的版本引用、10 号脚本 `NEW_TAG` 默认值，全部对齐新 tag。
+5. **提交并推送**：`git add -A && git commit`（`[FORK]` 前缀）→ `git push fork main` → 回读 GitHub raw 确认。
+6. **issue 收尾**：本版本修复的问题，对应 issue 关闭（`state_reason=completed` + `fixed` 标签）+ 归档评论（验证数字、镜像 tag、commit）。
+7. **记录基线**：NAS `Container/javboss/docker-compose.yml` 的 `image:` 同步新 tag（旧版备份到 `Backup/javboss/`）；工作区记忆（`.workbuddy/memory/`）追加当日条目。

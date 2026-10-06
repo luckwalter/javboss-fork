@@ -31,6 +31,7 @@
 - [5. 跟官方升级](#5-跟官方升级)
 - [6. 仓库结构](#6-仓库结构)
 - [7. 上游 JavBoss（本体）](#7-上游-javboss本体)
+- [版本沿革（CHANGELOG）](docs/CHANGELOG.md)
 - [免责声明](#免责声明)
 
 ---
@@ -298,8 +299,9 @@ docker build -t javboss-fork:<新tag> .
 ├── web/                             # 前端（fork 零改动，随官方源码一起构建）
 ├── Dockerfile                       # 上游：四段式构建（前端 → 后端 → 静态 ffmpeg → distroless）
 ├── docs/
-│   ├── maintenance-zh.md            # 【本分支】运维手册：渠道/判据/踩坑/升级/重建模板/安全红线
-│   └── fork-features-zh.md          # 【本分支】fork 功能详解
+│   ├── maintenance-zh.md            # 【本分支】运维手册：渠道/判据/踩坑/升级/重建模板/发版清单/安全红线
+│   ├── fork-features-zh.md          # 【本分支】fork 功能详解
+│   └── CHANGELOG.md                 # 【本分支】版本沿革（每次迭代必更新，见手册 §12）
 ├── scripts/
 │   ├── maintenance/                 # 【本分支】运维工具链（12 脚本 + 共享库 + 说明）
 │   ├── cli/  install.sh  install.ps1        # 上游：安装器
