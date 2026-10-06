@@ -2,13 +2,13 @@
 """维护脚本共享配置：凭据一律走环境变量，绝不写死在代码里。
 
 环境变量：
-  NAS_HOST      QNAP 地址            默认 192.168.2.254
+  NAS_HOST      QNAP 地址            默认 192.168.1.10（示例值，请按实际设置）
   NAS_USER      QNAP SSH 用户        默认 admin
   NAS_PASS      QNAP SSH 密码        必填
   NAS_DATA      JavBoss 宿主机数据目录（容器 bind mount 源）
                                      默认 /share/CACHEDEV1_DATA/Container/javboss/data
   NAS_BACKUP    备份根目录           默认 /share/CACHEDEV1_DATA/Backup/javboss
-  PROXY_URL     局域网 squid 代理    默认 http://192.168.2.175:3128
+  PROXY_URL     局域网 squid 代理    默认 http://192.168.1.20:3128（示例值）
   JAVBOSS_PASS  JavBoss Web 登录密码 默认 admin
 
 用法：
@@ -21,14 +21,14 @@ import sys
 
 import paramiko
 
-NAS_HOST = os.environ.get("NAS_HOST", "192.168.2.254")
+NAS_HOST = os.environ.get("NAS_HOST", "192.168.1.10")
 NAS_USER = os.environ.get("NAS_USER", "admin")
 NAS_PASS = os.environ.get("NAS_PASS", "")
 DOCKER = "/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker"
 DATA = os.environ.get("NAS_DATA", "/share/CACHEDEV1_DATA/Container/javboss/data")
 WORK = DATA + "/_probe"
 BKROOT = os.environ.get("NAS_BACKUP", "/share/CACHEDEV1_DATA/Backup/javboss")
-PROXY = os.environ.get("PROXY_URL", "http://192.168.2.175:3128")
+PROXY = os.environ.get("PROXY_URL", "http://192.168.1.20:3128")
 JAVBOSS_PASS = os.environ.get("JAVBOSS_PASS", "admin")
 
 HERE = os.path.dirname(os.path.abspath(__file__))

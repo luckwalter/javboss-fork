@@ -51,7 +51,7 @@
 2. **paramiko `exec_command` 不阻塞**：必须 `o.read()` 等命令结束，否则 cp 与 sftp.put 竞态、备份是坏的。
 3. **`sftp.get()` 远端文件不存在时在本地留 0 字节文件**：`os.path.exists` 通过但 `json.load` 崩——下载产物用前查 `getsize()>100`。
 4. **QNAP dockerd 代理**：走 supervisord 包装脚本 `run-docker-proxy.sh`（勿用 daemon.json proxies → Fatal；勿用 supervisord environment → NO_PROXY 逗号破坏解析）。容器内程序访问外网必须自己带 `HTTP_PROXY/HTTPS_PROXY` env，dockerd 的代理不传给容器。
-5. **DNS 污染**：`registry-1.docker.io`/`auth.docker.io` 被解析到 Facebook IP；一切外网访问（含容器内抓取）走 squid `192.168.2.175:3128`。busybox wget 不读 HTTPS_PROXY，测连通用 curl。
+5. **DNS 污染**：`registry-1.docker.io`/`auth.docker.io` 被解析到 Facebook IP；一切外网访问（含容器内抓取）走局域网正向代理（`PROXY_URL`）。busybox wget 不读 HTTPS_PROXY，测连通用 curl。
 6. **distroless 容器（javboss）**：`docker exec` 进不去（无 sh）。诊断姿势：宿主机 bind mount 目录直接看文件 + HTTP API（登录 `POST /auth/login` body `{"password":...}` 用 cookie 会话，不返回 token）；改 sqlite 用 alpine 容器挂 /data + apk 装 python3。
 7. **QNAP 上改 sqlite 的引号地狱**：`%` 经 shell 会被吃（`LIKE '%x%'` 报错）、反引号被替换——SQL 一律写进 .py 文件经容器执行，别拼命令行。
 8. **Container Station GUI 下载镜像**：填全名（ghcr.io/...）；日志在 `/var/log/container-station/`。存在无代理残留 ctstation 实例导致 GUI 偶发卡顿，但不影响 `docker pull`。

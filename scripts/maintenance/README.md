@@ -6,11 +6,12 @@
 
 ```bash
 pip install paramiko          # 唯一依赖（Python 3.9+）
+export NAS_HOST='192.168.1.10'      # 你的 QNAP 地址
 export NAS_PASS='<QNAP SSH 密码>'   # 必填
-# 可选：NAS_HOST / NAS_USER / NAS_DATA / NAS_BACKUP / PROXY_URL / JAVBOSS_PASS
+# 可选：NAS_USER / NAS_DATA / NAS_BACKUP / PROXY_URL / JAVBOSS_PASS
 ```
 
-要求：本机与 QNAP SSH(22) 可达；NAS 上 squid 代理（默认 192.168.2.175:3128）可用。
+要求：本机与 QNAP SSH(22) 可达；NAS 上正向代理（squid，`PROXY_URL`）可用。
 
 ## 流水线（按序执行）
 
