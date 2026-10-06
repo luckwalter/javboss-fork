@@ -14,3 +14,7 @@ release/
 temp
 internal/bin/
 bin
+
+# maintenance 工具的本地产物（DB 快照/抓取结果），含敏感数据，严禁提交
+scripts/maintenance/artifacts/
+scripts/maintenance/__pycache__/
