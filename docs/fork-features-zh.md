@@ -31,7 +31,7 @@
 
 ### 1.2 数据结构
 
-新增列（goose 迁移 `internal/db/migrations/202610040001_add_jav_idol_avatar.go`）：
+新增列（goose 迁移 `internal/db/migrations/209901010001_add_jav_idol_avatar.go`）：
 
 | 列 | 含义 | 示例 |
 |---|---|---|

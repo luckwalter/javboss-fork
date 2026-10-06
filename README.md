@@ -68,7 +68,7 @@
 
 **实现方式**（4 个文件，全部是「新增式」改动，天然低冲突）：
 
-1. **迁移** `internal/db/migrations/202610040001_add_jav_idol_avatar.go` — 加列 + 建索引；
+1. **迁移** `internal/db/migrations/209901010001_add_jav_idol_avatar.go` — 加列 + 建索引（fork 迁移统一放在 `2099` 保留号段，与上游的日期号段彻底隔离，见 [第 5 节](#5-跟官方升级)）；
 2. **模型** `internal/models/jav.go` — `JavIdol` 加 `AvatarCode` / `AvatarFile` 字段；
 3. **查询** `internal/db/jav.go` — 女优列表两处 SELECT 改用 `COALESCE(ji.avatar_code, …)`，让虚拟码优先于作品番号；
 4. **路由** `internal/server/jav_cover_api.go` + `jav_idol_api.go` — `lookupIdolAvatarFile()` 命中独立头像就直接返回文件（排在作品封面查找**之前**），`hasIdolAvatarFile()` 则拦住刮削回填。

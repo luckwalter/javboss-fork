@@ -9,7 +9,7 @@
 
 | 文件 | 改动 |
 |---|---|
-| `internal/db/migrations/202610040001_add_jav_idol_avatar.go` | jav_idol 加 `avatar_code`/`avatar_file` 两列 + 索引 |
+| `internal/db/migrations/209901010001_add_jav_idol_avatar.go` | jav_idol 加 `avatar_code`/`avatar_file` 两列 + 索引（**fork 迁移一律用 `2099` 保留号段**，见第 5 节） |
 | `internal/models/jav.go` | 对应两个 GORM 字段 |
 | `internal/db/jav.go` | idol 查询 SELECT 加 `COALESCE(ji.avatar_code, ...)`，Group 同步 |
 | `internal/server/jav_cover_api.go` | `lookupIdolAvatarFile`：`/jav/<idol>/cover` 优先返回独立头像文件 |
