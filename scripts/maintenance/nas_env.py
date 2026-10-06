@@ -27,6 +27,8 @@ NAS_PASS = os.environ.get("NAS_PASS", "")
 DOCKER = "/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker"
 DATA = os.environ.get("NAS_DATA", "/share/CACHEDEV1_DATA/Container/javboss/data")
 WORK = DATA + "/_probe"
+# fork 工作区（src/ 源码、build/ 产物、modcache/ 依赖缓存、gocache/ 编译缓存、build.sh）
+FORK = os.path.dirname(DATA) + "/fork"
 BKROOT = os.environ.get("NAS_BACKUP", "/share/CACHEDEV1_DATA/Backup/javboss")
 PROXY = os.environ.get("PROXY_URL", "http://192.168.1.20:3128")
 JAVBOSS_PASS = os.environ.get("JAVBOSS_PASS", "admin")
