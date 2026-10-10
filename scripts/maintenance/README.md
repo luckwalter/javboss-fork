@@ -1,5 +1,7 @@
 # JavBoss 维护工具链（scripts/maintenance）
 
+> **⚠️ 脚本不随本仓库发布**：本目录下的 Python 维护脚本（`0`~`14` 号、`nas_env.py`、`match_util.py`）已**移出本仓库**，改为本地工作区专用、按需维护（凭据走环境变量、内网地址用占位，已脱敏）。本 README 仅保留作为工具链说明索引，所列脚本请在本地的 `javboss/` 工作区取用；`12_clean_thumbs.sh` 为脱敏的 shell 部署脚本，仍随仓库提供。
+
 把"演员资料补全 + 高清头像替换"的全部流程脚本化，凭据走环境变量，产物落 `artifacts/`（已 gitignore）。
 
 ## 环境准备

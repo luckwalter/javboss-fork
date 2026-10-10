@@ -51,7 +51,7 @@
 | 6 | **运维手册** | 资料渠道清单、头像替换判据、踩坑 Top 12、跟官方升级流程、容器重建模板、安全红线 | [`docs/maintenance-zh.md`](docs/maintenance-zh.md) |
 | 7 | **功能详解** | 本 fork 每个特性的原理、数据、验证方式 | [`docs/fork-features-zh.md`](docs/fork-features-zh.md) |
 
-**本分支不发布 Release、不分发二进制**——它只提供源码与运维脚本，成品镜像是本地构建的。
+**本分支不发布 Release、不分发二进制、也不随仓库发布 Python 维护脚本**——源码公开；`scripts/maintenance/` 下的 .py 为本地专用、按需维护（已脱敏），成品镜像是本地构建的。
 
 ---
 
