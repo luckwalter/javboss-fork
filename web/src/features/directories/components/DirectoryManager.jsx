@@ -501,8 +501,8 @@ export default function DirectoryManager({
             const autoScanDisplay =
               d.auto_scan_enabled !== false
                 ? zh(
-                    `自动扫描：每 ${autoScanIntervalMinutes} 分钟`,
-                    `Automatic scan: Every ${autoScanIntervalMinutes} min`
+                    `自动扫描间隔：${autoScanIntervalMinutes} 分钟`,
+                    `Automatic scan interval: ${autoScanIntervalMinutes} min`
                   )
                 : zh('自动扫描：已关闭', 'Automatic scan: Off')
             const working =
@@ -983,8 +983,8 @@ export default function DirectoryManager({
                 <span className="mt-0.5 block text-xs text-zinc-500">
                   {scanSettingsEnabled
                     ? zh(
-                        '按指定间隔进行目录扫描和 JAV 刮削',
-                        'Scan the directory and scrape JAV metadata at the specified interval'
+                        '按固定间隔时间定期进行目录扫描和 JAV 刮削',
+                        'Scan the directory and scrape JAV metadata at fixed intervals'
                       )
                     : zh('已关闭，可使用手动扫描', 'Off; manual scans remain available')}
                 </span>
@@ -995,7 +995,7 @@ export default function DirectoryManager({
                 onChange={(event) => setScanSettingsEnabled(event.target.checked)}
                 className="peer sr-only"
               />
-              <span className="relative h-6 w-11 shrink-0 rounded-full bg-zinc-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:bg-blue-600 peer-checked:after:translate-x-5 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2" />
+              <span className="relative h-6 w-11 shrink-0 rounded-full bg-zinc-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:bg-blue-600 peer-checked:after:translate-x-5" />
             </label>
             {scanSettingsEnabled && (
               <label className="flex items-center gap-2 border-t border-zinc-200 px-4 py-3 text-sm text-zinc-700">

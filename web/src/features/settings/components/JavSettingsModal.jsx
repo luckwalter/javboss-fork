@@ -99,7 +99,7 @@ function SettingsSwitch({ label, checked, onChange }) {
       aria-label={label}
       aria-checked={Boolean(checked)}
       onClick={() => onChange?.(!checked)}
-      className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+      className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition focus:outline-none ${
         checked ? 'bg-blue-600' : 'bg-slate-200'
       }`}
     >
@@ -184,7 +184,7 @@ function JavSortRuleEditor({ rule, index, total, onChange, onMove, onRemove }) {
           <button
             type="button"
             aria-label={zh(`查看规则 ${index + 1} 的当前效果`, `View rule ${index + 1} effect`)}
-            className="inline-flex h-7 w-7 items-center justify-center text-amber-500 transition hover:text-amber-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+            className="inline-flex h-7 w-7 items-center justify-center text-amber-500 transition hover:text-amber-600 focus:outline-none"
           >
             <InfoOutlinedIcon sx={{ fontSize: 18 }} />
           </button>
@@ -355,6 +355,8 @@ export default function JavSettingsModal({
   onJavIdolPreferChineseNameChange,
   javTagShowSimplifiedInput = false,
   onJavTagShowSimplifiedChange,
+  javWatchTimeIconMinutesInput = 30,
+  onJavWatchTimeIconMinutesChange,
   onSave,
   saving = false,
 }) {
@@ -391,6 +393,7 @@ export default function JavSettingsModal({
         break
       default:
         onJavPageSizeChange?.(24)
+        onJavWatchTimeIconMinutesChange?.(30)
         onJavWaterfallDefaultChange?.(false)
         onJavGridColumnsChange?.(0)
         onJavTitleMaxRowsChange?.(2)
@@ -424,7 +427,7 @@ export default function JavSettingsModal({
         <button
           type="button"
           onClick={onClose}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-200/70 hover:text-slate-800 focus:outline-none"
           aria-label={zh('关闭设置', 'Close settings')}
         >
           <CloseRoundedIcon sx={{ fontSize: 22 }} />
@@ -441,7 +444,7 @@ export default function JavSettingsModal({
               role="tab"
               aria-selected={active}
               onClick={() => setActiveTab(tab.key)}
-              className={`rounded-full border px-4 py-1.5 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+              className={`rounded-full border px-4 py-1.5 text-sm font-medium transition focus:outline-none ${
                 active
                   ? 'border-blue-600 bg-blue-600 text-white shadow-md shadow-blue-200'
                   : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
@@ -493,6 +496,17 @@ export default function JavSettingsModal({
 
             <SettingsSection title={zh('卡片设置', 'Card settings')}>
               <div className="divide-y divide-slate-100 px-1">
+                <SettingsRow label={zh('每个观看图标代表的分钟数', 'Minutes per watch icon')}>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    aria-label={zh('每个观看图标代表的分钟数', 'Minutes per watch icon')}
+                    value={javWatchTimeIconMinutesInput}
+                    onChange={(event) => onJavWatchTimeIconMinutesChange?.(event.target.value)}
+                    className={controlClassName}
+                  />
+                </SettingsRow>
                 <SettingsRow label={zh('标题最多行数', 'Title max rows')}>
                   <select
                     value={String(javTitleMaxRowsInput ?? 2)}
@@ -781,7 +795,7 @@ export default function JavSettingsModal({
         <button
           type="button"
           onClick={resetActiveTab}
-          className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus:outline-none"
         >
           {zh('恢复默认', 'Restore defaults')}
         </button>
@@ -789,7 +803,7 @@ export default function JavSettingsModal({
           <button
             type="button"
             onClick={onClose}
-            className="min-w-24 rounded-lg border border-slate-300 bg-white px-5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="min-w-24 rounded-lg border border-slate-300 bg-white px-5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none"
           >
             {zh('取消', 'Cancel')}
           </button>
@@ -797,7 +811,7 @@ export default function JavSettingsModal({
             type="button"
             onClick={onSave}
             disabled={saving}
-            className="min-w-24 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-md shadow-blue-200 transition hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="min-w-24 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-md shadow-blue-200 transition hover:bg-blue-700 focus:outline-none"
           >
             {zh('保存', 'Save')}
           </button>

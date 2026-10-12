@@ -8,6 +8,7 @@ import { createConfigSlice } from '@/state/createConfigSlice'
 import { createTagSlice } from '@/state/createTagSlice'
 import { createDirectorySlice } from '@/state/createDirectorySlice'
 import { create } from 'zustand'
+import { createWatchedTimeSlice } from '@/state/createWatchedTimeSlice'
 
 export { videoSelectionKey } from '@/state/model'
 
@@ -19,6 +20,7 @@ export function createAppState(set, get) {
     get().invalidateFavoriteRequests()
   }
   return {
+    ...createWatchedTimeSlice({ set }),
     ...createVideoSlice({ set, get, lists }),
     ...createJavSlice({ set, get, lists }),
     ...createNavigationSlice({ set }),

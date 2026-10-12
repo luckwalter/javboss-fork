@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"javboss/internal/common"
 	"javboss/internal/common/logging"
 	dbpkg "javboss/internal/db"
 	"javboss/internal/jav"
@@ -59,7 +60,7 @@ var javSortRuleFilterOrder = map[string]int{
 var validJavSortValues = map[string]struct{}{
 	"recent": {}, "recent_asc": {}, "code": {}, "code_desc": {},
 	"duration": {}, "duration_asc": {}, "release": {}, "release_asc": {},
-	"play_count": {}, "play_count_asc": {}, "favorite_rating": {}, "favorite_rating_asc": {},
+	"watched": {}, "watched_asc": {}, "favorite_rating": {}, "favorite_rating_asc": {},
 }
 
 func getConfig(c *gin.Context) {
@@ -85,49 +86,52 @@ func updateConfig(c *gin.Context) {
 	}
 
 	var req struct {
-		VideoPageSize          *int                  `json:"video_page_size"`
-		VideoWaterfallDefault  *bool                 `json:"video_waterfall_default"`
-		JavPageSize            *int                  `json:"jav_page_size"`
-		JavGridColumns         *int                  `json:"jav_grid_columns"`
-		JavTitleMaxRows        *int                  `json:"jav_title_max_rows"`
-		JavIdolTagMaxRows      *int                  `json:"jav_idol_tag_max_rows"`
-		JavTagMaxRows          *int                  `json:"jav_tag_max_rows"`
-		JavHideSeries          *bool                 `json:"jav_hide_series"`
-		JavHideIdols           *bool                 `json:"jav_hide_idols"`
-		JavHideTags            *bool                 `json:"jav_hide_tags"`
-		JavHideActions         *bool                 `json:"jav_hide_actions"`
-		JavFavoriteRatingFull  *bool                 `json:"jav_favorite_rating_show_full"`
-		JavWaterfallDefault    *bool                 `json:"jav_waterfall_default"`
-		IdolPageSize           *int                  `json:"idol_page_size"`
-		IdolWaterfallDefault   *bool                 `json:"idol_waterfall_default"`
-		StudioPageSize         *int                  `json:"studio_page_size"`
-		StudioWaterfallDefault *bool                 `json:"studio_waterfall_default"`
-		SeriesPageSize         *int                  `json:"series_page_size"`
-		SeriesWaterfallDefault *bool                 `json:"series_waterfall_default"`
-		VideoHideJav           *bool                 `json:"video_hide_jav"`
-		VideoSort              string                `json:"video_sort"`
-		JavSort                string                `json:"jav_sort"`
-		JavSortRules           *javSortRulesConfig   `json:"jav_sort_rules"`
-		IdolSort               string                `json:"idol_sort"`
-		JavIdolPreferChinese   *bool                 `json:"jav_idol_prefer_chinese_name"`
-		JavTagShowSimplified   *bool                 `json:"jav_tag_show_simplified"`
-		DefaultPlayer          string                `json:"default_player"`
-		InitialViewMode        string                `json:"initial_view_mode"`
-		AllowLANAccess         *bool                 `json:"allow_lan_access"`
-		ProxyHost              *string               `json:"proxy_host"`
-		ProxyMode              *string               `json:"proxy_mode"`
-		ProxyPort              *int                  `json:"proxy_port"`
-		PlayerWindowSize       *int                  `json:"player_window_size"`
-		PlayerWindowWidth      *int                  `json:"player_window_width"`
-		PlayerWindowHeight     *int                  `json:"player_window_height"`
-		PlayerVolume           *int                  `json:"player_volume"`
-		PlayerOntop            *bool                 `json:"player_ontop"`
-		PlayerReuseWindow      *bool                 `json:"player_reuse_window"`
-		PlayerResumePlayback   *bool                 `json:"player_resume_playback"`
-		PlayerShowHotkeyHint   *bool                 `json:"player_show_hotkey_hint"`
-		BrowserShowHotkeyHint  *bool                 `json:"browser_player_show_hotkey_hint"`
-		PlayerHotkeys          []playerHotkeyPayload `json:"player_hotkeys"`
-		WebHotkeys             []webHotkeyPayload    `json:"web_hotkeys"`
+		VideoWatchTimeIconMinutes *int                  `json:"video_watch_time_icon_minutes"`
+		JavWatchTimeIconMinutes   *int                  `json:"jav_watch_time_icon_minutes"`
+		VideoPageSize             *int                  `json:"video_page_size"`
+		VideoWaterfallDefault     *bool                 `json:"video_waterfall_default"`
+		JavPageSize               *int                  `json:"jav_page_size"`
+		JavGridColumns            *int                  `json:"jav_grid_columns"`
+		JavTitleMaxRows           *int                  `json:"jav_title_max_rows"`
+		JavIdolTagMaxRows         *int                  `json:"jav_idol_tag_max_rows"`
+		JavTagMaxRows             *int                  `json:"jav_tag_max_rows"`
+		JavHideSeries             *bool                 `json:"jav_hide_series"`
+		JavHideIdols              *bool                 `json:"jav_hide_idols"`
+		JavHideTags               *bool                 `json:"jav_hide_tags"`
+		JavHideActions            *bool                 `json:"jav_hide_actions"`
+		JavFavoriteRatingFull     *bool                 `json:"jav_favorite_rating_show_full"`
+		JavWaterfallDefault       *bool                 `json:"jav_waterfall_default"`
+		IdolPageSize              *int                  `json:"idol_page_size"`
+		IdolWaterfallDefault      *bool                 `json:"idol_waterfall_default"`
+		StudioPageSize            *int                  `json:"studio_page_size"`
+		StudioWaterfallDefault    *bool                 `json:"studio_waterfall_default"`
+		SeriesPageSize            *int                  `json:"series_page_size"`
+		SeriesWaterfallDefault    *bool                 `json:"series_waterfall_default"`
+		VideoHideJav              *bool                 `json:"video_hide_jav"`
+		VideoSort                 string                `json:"video_sort"`
+		JavSort                   string                `json:"jav_sort"`
+		JavSortRules              *javSortRulesConfig   `json:"jav_sort_rules"`
+		IdolSort                  string                `json:"idol_sort"`
+		JavIdolPreferChinese      *bool                 `json:"jav_idol_prefer_chinese_name"`
+		JavTagShowSimplified      *bool                 `json:"jav_tag_show_simplified"`
+		DefaultPlayer             string                `json:"default_player"`
+		InitialViewMode           string                `json:"initial_view_mode"`
+		AllowLANAccess            *bool                 `json:"allow_lan_access"`
+		ProxyHost                 *string               `json:"proxy_host"`
+		ProxyMode                 *string               `json:"proxy_mode"`
+		ProxyPort                 *int                  `json:"proxy_port"`
+		PlayerWindowSize          *int                  `json:"player_window_size"`
+		PlayerWindowWidth         *int                  `json:"player_window_width"`
+		PlayerWindowHeight        *int                  `json:"player_window_height"`
+		PlayerVolume              *int                  `json:"player_volume"`
+		PlayerOntop               *bool                 `json:"player_ontop"`
+		PlayerReuseWindow         *bool                 `json:"player_reuse_window"`
+		PlayerResumePlayback      *bool                 `json:"player_resume_playback"`
+		PlayerShowHotkeyHint      *bool                 `json:"player_show_hotkey_hint"`
+		BrowserResumePlayback     *bool                 `json:"browser_player_resume_playback"`
+		BrowserShowHotkeyHint     *bool                 `json:"browser_player_show_hotkey_hint"`
+		PlayerHotkeys             []playerHotkeyPayload `json:"player_hotkeys"`
+		WebHotkeys                []webHotkeyPayload    `json:"web_hotkeys"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondLocalizedError(c, http.StatusBadRequest, "配置请求无效", "Invalid configuration request")
@@ -143,6 +147,19 @@ func updateConfig(c *gin.Context) {
 			n = maxPageSize
 		}
 		return strconv.Itoa(n), true
+	}
+
+	for key, value := range map[string]*int{
+		"video_watch_time_icon_minutes": req.VideoWatchTimeIconMinutes,
+		"jav_watch_time_icon_minutes":   req.JavWatchTimeIconMinutes,
+	} {
+		if value != nil {
+			minutes := *value
+			if minutes <= 0 {
+				minutes = 30
+			}
+			entries[key] = strconv.Itoa(minutes)
+		}
 	}
 
 	if req.VideoPageSize != nil {
@@ -245,13 +262,17 @@ func updateConfig(c *gin.Context) {
 	}
 	if s := strings.ToLower(strings.TrimSpace(req.VideoSort)); s != "" {
 		switch s {
-		case "recent", "recent_asc", "filename", "filename_desc", "duration", "duration_asc", "play_count", "play_count_asc":
+		case "recent", "recent_asc", "filename", "filename_desc", "duration", "duration_asc", "watched", "watched_asc":
 			entries["video_sort"] = s
+		case "watched_desc", "play_count", "play_count_desc":
+			entries["video_sort"] = "watched"
+		case "play_count_asc":
+			entries["video_sort"] = "watched_asc"
 		default:
 			// ignore invalid values
 		}
 	}
-	if s := strings.ToLower(strings.TrimSpace(req.JavSort)); s != "" {
+	if s := normalizeJavSortValue(req.JavSort); s != "" {
 		if _, ok := validJavSortValues[s]; ok {
 			entries["jav_sort"] = s
 		} else {
@@ -399,6 +420,9 @@ func updateConfig(c *gin.Context) {
 	}
 	if req.PlayerShowHotkeyHint != nil {
 		entries["player_show_hotkey_hint"] = strconv.FormatBool(*req.PlayerShowHotkeyHint)
+	}
+	if req.BrowserResumePlayback != nil {
+		entries["browser_player_resume_playback"] = strconv.FormatBool(*req.BrowserResumePlayback)
 	}
 	if req.BrowserShowHotkeyHint != nil {
 		entries["browser_player_show_hotkey_hint"] = strconv.FormatBool(*req.BrowserShowHotkeyHint)
@@ -572,6 +596,7 @@ func updateConfig(c *gin.Context) {
 }
 
 func applyRuntimeConfigFields(cfg map[string]string, remoteAddr string) {
+	cfg["app_version"] = common.Version
 	cfg["proxy_mode"] = util.ResolveProxyMode(cfg["proxy_mode"], cfg["proxy_port"])
 	remoteRequest := isRemoteRequest(remoteAddr)
 	containerMode := runtimeconfig.ContainerMode()
@@ -625,6 +650,17 @@ func normalizedPlayerHotkeyAmount(action string, amount float64) float64 {
 	return amount
 }
 
+func normalizeJavSortValue(value string) string {
+	switch s := strings.ToLower(strings.TrimSpace(value)); s {
+	case "watched_desc", "play_count", "play_count_desc":
+		return "watched"
+	case "play_count_asc":
+		return "watched_asc"
+	default:
+		return s
+	}
+}
+
 func normalizeJavSortRulesConfig(config javSortRulesConfig) (javSortRulesConfig, bool) {
 	if config.Version != 1 || len(config.Rules) > maxJavSortRules {
 		return javSortRulesConfig{}, false
@@ -634,7 +670,7 @@ func normalizeJavSortRulesConfig(config javSortRulesConfig) (javSortRulesConfig,
 	for _, rule := range config.Rules {
 		id := strings.TrimSpace(rule.ID)
 		mode := strings.ToLower(strings.TrimSpace(rule.Mode))
-		sortValue := strings.ToLower(strings.TrimSpace(rule.Sort))
+		sortValue := normalizeJavSortValue(rule.Sort)
 		if !validJavSortRuleID(id) {
 			return javSortRulesConfig{}, false
 		}

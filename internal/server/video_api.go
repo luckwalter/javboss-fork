@@ -26,6 +26,8 @@ import (
 	"javboss/internal/util"
 )
 
+// listVideos accepts sort=watched (longest first) or watched_asc (shortest first)
+// for cumulative watch time; legacy play_count sort values are aliases.
 func listVideos(c *gin.Context) {
 	limit := queryInt(c, "limit", 100)
 	offset := queryInt(c, "offset", 0)
@@ -248,7 +250,7 @@ func streamHLSManifest(c *gin.Context) {
 		return
 	}
 	if common.StreamManager == nil {
-		respondLocalizedError(c, http.StatusServiceUnavailable, "浏览器播放服务不可用", "Browser playback service is unavailable")
+		respondLocalizedError(c, http.StatusServiceUnavailable, "网页播放服务不可用", "Web playback service is unavailable")
 		return
 	}
 
@@ -264,7 +266,7 @@ func streamHLSSegment(c *gin.Context) {
 		return
 	}
 	if common.StreamManager == nil {
-		respondLocalizedError(c, http.StatusServiceUnavailable, "浏览器播放服务不可用", "Browser playback service is unavailable")
+		respondLocalizedError(c, http.StatusServiceUnavailable, "网页播放服务不可用", "Web playback service is unavailable")
 		return
 	}
 
@@ -371,11 +373,11 @@ func respondPlaybackError(c *gin.Context, err error) {
 		strings.Contains(err.Error(), "unavailable in Docker image"),
 		strings.Contains(err.Error(), "ffmpeg not found"),
 		strings.Contains(err.Error(), "ffprobe not found"):
-		respondLocalizedError(c, http.StatusServiceUnavailable, "缺少浏览器播放所需组件", err.Error())
+		respondLocalizedError(c, http.StatusServiceUnavailable, "缺少网页播放器所需组件", err.Error())
 	case errors.Is(err, os.ErrNotExist):
 		respondLocalizedError(c, http.StatusNotFound, "视频文件或所在目录不存在", "Video file or directory does not exist")
 	case strings.Contains(err.Error(), "browser playback is not supported"):
-		respondLocalizedError(c, http.StatusUnprocessableEntity, "当前视频不支持浏览器播放", err.Error())
+		respondLocalizedError(c, http.StatusUnprocessableEntity, "当前视频不支持网页播放器播放", "This video cannot be played in the web player")
 	case strings.Contains(err.Error(), "invalid segment"), strings.Contains(err.Error(), "invalid id"), strings.Contains(err.Error(), "invalid location_id"), strings.Contains(err.Error(), "invalid path"):
 		respondLocalizedError(c, http.StatusBadRequest, "播放请求参数无效", "Invalid playback request")
 	default:

@@ -13,7 +13,7 @@
 
 <p align="center">
   <a href="https://github.com/Solr159/JavBoss"><img alt="Upstream" src="https://img.shields.io/badge/upstream-Solr159%2FJavBoss-181717?logo=github&logoColor=white"></a>
-  <img alt="Based on" src="https://img.shields.io/badge/based%20on-upstream%20main%20%405aa89f3-1E88E5">
+  <img alt="Based on" src="https://img.shields.io/badge/based%20on-upstream%20main%20%40e7c5834-1E88E5">
   <img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-blue">
   <img alt="Go" src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white">
   <img alt="Docker" src="https://img.shields.io/badge/Docker-distroless-2496ED?logo=docker&logoColor=white">
@@ -204,12 +204,15 @@ export NAS_PASS='<NAS SSH 密码>'       # 必填，不写进任何文件
 
 ## 4. 部署本分支
 
-本分支**不发布 Release、不推镜像**，成品镜像自己构建。
+本分支**发布 Release（仅源码包）、不推镜像**，成品镜像自己构建。
 
-> **版本现状**（2026-10-06 核实）：
-> 上游最新发布 = **v2.1.1**（`ghcr.io/solr159/javboss:v2.1.1`，也就是 `latest`），
-> 而上游 `main` 已经到 **`5aa89f3`**（含 #375 watch-time / #376 jav delete / #377 cover 修复 / #379 播放列表 四个**未发布**提交）。
-> **本分支已跟进到 `5aa89f3`** —— 所以在 ghcr 上**拉不到**更新版本，`5aa89f3` 的能力只能自己构建。
+> **版本现状**（2026-10-12 核实）：
+> 上游最新发布 = **v2.1.2**（2026-10-07，含至 #389），上游 `main` 已到 **`e7c5834`**（#391）。
+> **本分支已跟进到 `e7c5834`**（2026-10-12 合入），
+> 相对旧基线 `5aa89f3` 新增：#384 观看时长显示 / #385 代码优化 / #386 版本号展示 / #387 toast 优化 / #388 MPV 随主进程退出 / #391 Docker 部署说明。
+> 由于本分支不分发二进制，这些能力同样只能自己构建镜像获得。
+
+> Docker 部署下默认只能使用**网页播放器**；如需使用 MPV，需改用 Client 模式（详见上游文档）。
 
 ```bash
 # 1) 全量构建（用仓库根目录自带的官方 Dockerfile，四段式）
