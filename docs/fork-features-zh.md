@@ -250,8 +250,8 @@ env(FFPROBE_PATH / FFMPEG_PATH)
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `BASE_IMAGE` | `javboss-fork:2.2.0` | 底座 = 上一版可用镜像（已自带 ffprobe/ffmpeg） |
-| `NEW_TAG` | `javboss-fork:2.2.1` | 目标 tag |
+| `BASE_IMAGE` | `javboss-fork:2.2.2` | 底座 = 上一版可用镜像（已自带 ffprobe/ffmpeg） |
+| `NEW_TAG` | `javboss-fork:2.2.3` | 目标 tag |
 | `GO_IMAGE` | `golang:1.25-bookworm` | 编译用镜像 |
 
 > **两种构建路线怎么选**：
@@ -270,12 +270,12 @@ env(FFPROBE_PATH / FFMPEG_PATH)
 **跟上游升级 / 大版本前进（推荐）**：用仓库根的官方 `Dockerfile` 全量构建，前端后端一次到位。
 
 ```bash
-docker build -t javboss-fork:2.2.1 .
+docker build -t javboss-fork:2.2.2 .
 ```
 
-> 版本现状（2026-10-06）：上游最新发布 = **v2.1.1**（`ghcr.io/solr159/javboss:v2.1.1` = `latest`），
-> 但 `main` 已到 **`5aa89f3`**（#375/#376/#377/#379 未发布）。**本 fork 已跟进到 `5aa89f3`**，
-> 所以 ghcr 上拉不到更新版本，只能自己构建。
+> 版本现状（2026-10-13）：上游最新发布 = **v2.1.2**（`ghcr.io/solr159/javboss:v2.1.2` = `latest`），
+> `main` 已到 **`e7c5834`**（#391）。**本 fork 已跟进到 `e7c5834`**（镜像 `javboss-fork:2.2.2`），
+> 所以 ghcr 上拉不到含 fork 改动的版本，只能自己构建。
 
 **只改了 Go 源码**：走增量路线，省一次前端构建。
 
@@ -290,7 +290,7 @@ python3 scripts/maintenance/10_build_fork_image.py
 
 ```bash
 export NAS_PASS='<密码>'
-python3 scripts/maintenance/11_deploy_fork_image.py --image javboss-fork:2.2.1
+python3 scripts/maintenance/11_deploy_fork_image.py --image javboss-fork:2.2.2
 ```
 
 ### 4.2 重建容器

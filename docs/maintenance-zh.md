@@ -259,7 +259,7 @@ $D commit javboss javboss-fork:2.1.2
 ```sh
 D=/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker
 $D inspect javboss > /share/CACHEDEV1_DATA/Backup/javboss/javboss-inspect-$(date +%Y%m%d).json
-$D create --name chk javboss-fork:2.2.1          # 容器名不能以 _ 开头！
+$D create --name chk javboss-fork:2.2.2          # 容器名不能以 _ 开头！
 $D cp chk:/app/internal/bin/ffprobe /share/chk_ffprobe && ls -l /share/chk_ffprobe   # 应 ~48MB
 $D rm -f chk
 ```
@@ -283,7 +283,7 @@ $D run -d --name javboss \
   -e TZ=Asia/Shanghai \
   -v /share/CACHEDEV1_DATA/Container/javboss/data:/app/data \
   -v /:/host:ro \
-  javboss-fork:2.2.1 ./javboss -port 8655
+  javboss-fork:2.2.2 ./javboss -port 8655
 ```
 
 > **优先用 `scripts/maintenance/11_deploy_fork_image.py`**：它会从 `docker inspect` 现读当前容器的真实配置再重建，
@@ -317,11 +317,11 @@ $D logs javboss | grep -c 'probe playback support error'        # 必须为 0
 
 ## 12. 发版清单（每个 fork 版本迭代必做，一步都不许省）
 
-> 这是**硬性流程**：从 `2.2.1` 之后，每次出新镜像都必须走完本清单。
+> 这是**硬性流程**：从 `2.2.2` 之后，每次出新镜像都必须走完本清单。
 > 版本沿革正文写在 `docs/CHANGELOG.md`（条目格式照抄现有版本）。
 
 1. **定 tag**：新版本 = 上一版 tag + 0.0.1；**tag ↔ 源码必须一一对应**，绝不复用旧 tag 装新代码（2.1.x 时代「底座≠源码」的教训，见 §9）。
-2. **验证先行**：`9_verify_playback.py --deep` 全量可播数 = 总数（当前基线 2243），异常 0；不达标不许发布。
+2. **验证先行**：`9_verify_playback.py --deep` 全量可播数 = 总数（当前基线 2235），异常 0；不达标不许发布。
 3. **写 CHANGELOG**：`docs/CHANGELOG.md` 顶部插入新条目 + 更新「镜像 tag ↔ 底座 ↔ 二进制源码 对照表」，必含：源码 commit、构建方式（全量/增量）、改了什么/为什么、修复的 issue、验证数字。
 4. **同步文档基线**：README 徽章与部署命令里的镜像 tag、`maintenance-zh.md` / `fork-features-zh.md` 里的版本引用、10 号脚本 `NEW_TAG` 默认值，全部对齐新 tag。
 5. **提交并推送**：`git add -A && git commit`（`[FORK]` 前缀）→ `git push fork main` → 回读 GitHub raw 确认。

@@ -126,7 +126,7 @@
 | **修复 C** | `sync.Once` 缓存失败结果 → 改为**仅缓存成功**，失败下次重试 |
 
 > 修复提交：`ad880f4`（源码）+ `6a1b216`（文档）——即镜像 **`javboss-fork:2.1.3` 起生效**。
-> 镜像版本沿革：`2.1.3`（修复落地）→ `2.2.0`（合并上游 `main` `5aa89f3`）→ **`2.2.1`**（迁移入口加 `WithAllowMissing`，当前基线）。
+> 镜像版本沿革：`2.1.3`（修复落地）→ `2.2.0`（合并上游 `main` `5aa89f3`）→ `2.2.1`（迁移入口加 `WithAllowMissing`）→ **`2.2.2`**（合并上游 `main e7c5834` = v2.1.2，当前基线）。
 > 已在 NAS 上跑过全量验证：**2243 / 2243 个视频可播、0 异常**。
 > 未修复的历史镜像（≤ v2.1.2）仍可用工具链里的 `8_fix_ffprobe.py` 做运行时规避。
 
@@ -217,12 +217,12 @@ export NAS_PASS='<NAS SSH 密码>'       # 必填，不写进任何文件
 ```bash
 # 1) 全量构建（用仓库根目录自带的官方 Dockerfile，四段式）
 #    node 构建前端 → golang 构建后端 → 下载静态 ffmpeg/ffprobe → distroless 底座
-docker build -t javboss-fork:2.2.1 .
+docker build -t javboss-fork:2.2.2 .
 #    走这条路前端会跟着上游一起更新，且不存在「底座版本 ≠ 源码版本」的耦合
 
 # 2) 推到 NAS 并按现读配置重建容器（自动备份 DB、按需清理迁移残留行）
 export NAS_PASS='<NAS SSH 密码>'
-python3 scripts/maintenance/11_deploy_fork_image.py --image javboss-fork:2.2.1
+python3 scripts/maintenance/11_deploy_fork_image.py --image javboss-fork:2.2.2
 
 # 3) 全量验证「每个视频都能播」
 python3 scripts/maintenance/9_verify_playback.py --deep

@@ -28,7 +28,8 @@
 
 | fork 镜像 tag | 发布日期 | 底座 | 二进制源码（上游基线） | 状态 |
 |---|---|---|---|---|
-| `2.2.1` | 2026-10-06 | `javboss-fork:2.2.0`（增量 COPY） | fork `91ad357` ← 上游 `main 5aa89f3` | ✅ 当前生产 |
+| `2.2.2` | 2026-10-13 | 官方 Dockerfile 四段式全量构建 | fork `dc0afbc`（合并上游 `main e7c5834` = v2.1.2） | ✅ 当前生产 |
+| `2.2.1` | 2026-10-06 | `javboss-fork:2.2.0`（增量 COPY） | fork `91ad357` ← 上游 `main 5aa89f3` | 已被 2.2.2 取代 |
 | `2.2.0` | 2026-10-06 | 官方 Dockerfile 四段式全量构建 | fork `b413ed0`（合并上游 main `5aa89f3`） | ⚠️ 未留产线（启动 Fatal，见下） |
 | `2.1.3` | 2026-10-06 | `javboss-fork:2.1.2`（增量 COPY） | fork `ad880f4` ← 上游 v2.1.1 `fde33e4` | 已被 2.2.1 取代 |
 | `2.1.2` | 2026-10-06 | 官方 `v2.1.0` + 运行时补 ffprobe（docker commit） | 同 2.1.1 | 过渡版本 |
@@ -42,7 +43,38 @@
 
 ---
 
-## 2.2.1 — 2026-10-06（当前生产）
+## 2.2.2 — 2026-10-13（当前生产）
+
+**源码**：fork `dc0afbc`（merge 上游 `main e7c5834`，即上游 Release **v2.1.2**）｜**构建**：官方 `Dockerfile` 四段式**全量**构建（node 前端 → golang 后端 → alpine 静态 ffmpeg → distroless，216 MB；`APP_VERSION=2.2.2` 经 ldflags 注入，界面可显示版本号）
+
+### 新增（随上游 v2.1.2 合入，7 个 PR）
+
+- **#384 观看时长显示**：`watched_ms` 全栈落地（迁移建列 → `watched_time_api.go` → 前端播放状态与图标）。
+- **#385** 代码优化、**#386** Release 显示版本号、**#387** toast 优化、**#388** 修复 MPV 不随主进程退出、**#389** 版本号升至 v2.1.2、**#391** Docker 部署说明清晰度。
+- 全量构建（而非增量）的原因：本次上游改动**含前端**（web 大量改动），增量 `COPY` 二进制会漏掉前端产物。
+
+### 冲突解决（merge 仅 2 处）
+
+- `internal/server/video_api.go`：**保留 fork 完整修复**（`util.ErrFFToolMissing` 哨兵 + 判定排在 `os.ErrNotExist` 之前的顺序保证 + 404 分支），**仅吸收上游文案**「缺少浏览器播放所需组件」→「缺少**网页播放器**所需组件」。
+- `README.md`：以 fork 版本为主体；上游基线 `5aa89f3` → `e7c5834`/v2.1.2、徽章同步、修正过时的「不发布 Release」声明、补回上游 #391 的 Docker 部署说明（Docker 默认仅网页播放器，MPV 需 Client 模式）。
+- `internal/db/jav.go` 由 git **自动合并**（fork 头像字段 + 上游 `watched_ms` 排序，不同区块无冲突）。
+
+### 说明
+
+- 本次属「**跟上游升级**」，非 fork 功能新增：fork 的图像增强主线（女优头像 / 厂牌高清艺术照 / 样品图修复 / 播放修复）**不受影响**，fork 的 10 个 `.go` 补丁全部保留。
+- 迁移铁律不变：`2099` 号段 + `goose.WithAllowMissing()` 成对约束；本次部署判据为 `video.watched_ms` **已存在** ⇒ 撞号的 `202610040001` 行是真实执行记录，**保留不删**。
+- **rebase 路线不通**：本 fork 是独立仓（非 fork 链接），自带 `Initial commit` 的 README 与上游形成 `add/add` 冲突，硬 rebase 会在第 4 个提交撞死。改走 `git merge origin/main`，回滚锚点 `backup-main-before-upstream-20261012`（= 合并前 `b6fecc51`）。
+
+### 验证
+
+- **编译**：`docker run golang:1.25` + `go build ./cmd/... ./internal/...` → exit 0（零错误）。
+- **NAS 全量播放：2235 / 2235 可播、0 异常**；`--deep` 抽测前 20 部 `/stream` 与 m3u8 全 200。
+- **资源观测**（7 次采样）：RSS 77.6 ~ 98.8 MB、goroutine 40 ~ 78、`data_disk` 38.3%（79.1 / 207 GB）。
+- 部署前后快照：RSS 90.6 MB → 冷启动 37.3 MB；DB 已备份 `javboss.db.bak-upgrade-20261013-003506`。
+
+---
+
+## 2.2.1 — 2026-10-06（已被 2.2.2 取代）
 
 **源码**：fork `91ad357`（+ 文档收尾 `6ce4b0d`）｜**构建**：增量 `FROM javboss-fork:2.2.0` + `COPY out/javboss`（二进制 sha256 与镜像内逐字节一致）
 
