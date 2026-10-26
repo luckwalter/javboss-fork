@@ -1,3 +1,4 @@
+import { preferChineseTitle } from '@/features/jav/titleTranslation'
 import useJavFavoriteCount from '@/features/favorites/hooks/useJavFavoriteCount'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchJavItem } from '@/features/jav/api'
@@ -48,7 +49,8 @@ export default function JavDetailRoute({
   )
   const detailItems = useMemo(() => [detailItem], [detailItem])
   const { displayItems, ...presentation } = useJavPresentation(detailItems)
-  useDocumentTitle(buildJavDetailPageTitle(displayItems[0]), { priority: 10 })
+  const translateTitle = useStore((state) => preferChineseTitle(state.config))
+  useDocumentTitle(buildJavDetailPageTitle(displayItems[0], translateTitle), { priority: 10 })
   const previews = useJavPreviews()
   useEffect(() => {
     if (detailItem) onLoaded(detailItem)
@@ -95,6 +97,7 @@ export default function JavDetailRoute({
       {...presentation}
       {...previews}
       onIdolPreviewUpdated={previews.handleIdolPreviewUpdated}
+      onSeriesPreviewUpdated={previews.handleSeriesPreviewUpdated}
       detailView={{
         onClose,
         scrollTop: initialState.scrollTop,

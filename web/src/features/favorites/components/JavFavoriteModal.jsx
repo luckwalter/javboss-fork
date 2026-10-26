@@ -1,3 +1,10 @@
+import { getJavDisplayTitle } from '@/utils/jav'
+import { useStore } from '@/store'
+import {
+  preferChineseTitle,
+  preferChineseSeries,
+  getSeriesDisplayName,
+} from '@/features/jav/titleTranslation'
 import { useEffect, useMemo, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
@@ -21,6 +28,8 @@ export default function JavFavoriteModal({
   onCreateGroup,
   onSave,
 }) {
+  const preferChinese = useStore((state) => preferChineseSeries(state.config))
+  const translateTitle = useStore((state) => preferChineseTitle(state.config))
   const [localSelectedIds, setLocalSelectedIds] = useState([])
   const [newGroupName, setNewGroupName] = useState('')
   const [createError, setCreateError] = useState('')
@@ -47,7 +56,13 @@ export default function JavFavoriteModal({
 
   const selectedSet = new Set(localSelectedIds)
   const entityLabel = favoriteEntityLabel(entityType)
-  const itemName = favoriteItemName(entityType, idol, preferChineseName)
+  const itemName = favoriteItemName(
+    entityType,
+    idol,
+    preferChineseName,
+    preferChinese,
+    translateTitle
+  )
 
   const toggleGroup = (id, checked) => {
     const parsed = Number(id)
@@ -210,15 +225,18 @@ function favoriteEntityLabel(entityType) {
   }
 }
 
-function favoriteItemName(entityType, item, preferChineseName) {
+function favoriteItemName(entityType, item, preferChineseName, preferChinese, translateTitle) {
+  if (entityType === 'series')
+    return getSeriesDisplayName(item, preferChinese) || zh('未知系列', 'Unknown series')
   if (entityType === 'idol') {
     return getIdolDisplayName(item, preferChineseName)
   }
+  if (entityType === 'jav') {
+    const title = getJavDisplayTitle(item, translateTitle)
+    return [...new Set([item?.code, title])].filter(Boolean).join(' ')
+  }
   const name = String(item?.name || '').trim()
   if (name) return name
-  if (entityType === 'jav') {
-    return [item?.code, item?.title].filter(Boolean).join(' ') || zh('未知作品', 'Unknown JAV')
-  }
   if (entityType === 'studio') return zh('未知片商', 'Unknown studio')
   if (entityType === 'series') return zh('未知系列', 'Unknown series')
   return zh('未知女优', 'Unknown idol')

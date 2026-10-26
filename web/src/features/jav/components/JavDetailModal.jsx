@@ -1,3 +1,6 @@
+import Tooltip from '@/shared/ui/Tooltip'
+import { useStore } from '@/store'
+import { preferChineseSeries, getSeriesDisplayName } from '@/features/jav/titleTranslation'
 import { restoreDetailScroll } from '@/utils/restoreDetailScroll'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined'
@@ -9,7 +12,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import RemoveCircleOutlineRoundedIcon from '@mui/icons-material/RemoveCircleOutlineRounded'
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
-import { IconButton, Popper, Rating, Tooltip } from '@mui/material'
+import { IconButton, Popper, Rating } from '@mui/material'
 
 import { deleteVideoScreenshot, fetchVideoScreenshotsByIds } from '@/features/video/api'
 import { getResolvedJavSampleImages, resolveJavSampleImages } from '@/features/jav/api'
@@ -475,6 +478,7 @@ export default function JavDetailModal({
   loadIdolPreview,
   loadStudioPreview,
   loadSeriesPreview,
+  onSeriesPreviewUpdated,
   buildIdolUrl,
   buildStudioUrl,
   buildSeriesUrl,
@@ -528,7 +532,8 @@ export default function JavDetailModal({
   const idols = useMemo(() => (Array.isArray(item?.idols) ? item.idols : []), [item?.idols])
   const videos = useMemo(() => (Array.isArray(item?.videos) ? item.videos : []), [item?.videos])
   const studioName = String(studio?.name || '').trim()
-  const seriesName = String(series?.name || '').trim()
+  const preferChinese = useStore((state) => preferChineseSeries(state.config))
+  const seriesName = getSeriesDisplayName(series, preferChinese)
   const favoriteCount = Number(item?.favorite_count) || 0
   const emptyVideoSelection = useMemo(() => new Set(), [])
   const { coverAspectPercent } = useMemo(() => getIdolCardLayoutProps(), [])
@@ -975,6 +980,7 @@ export default function JavDetailModal({
           {hoverPreview?.type === 'series' ? (
             <SeriesCard
               item={hoverPreview.item}
+              onUpdated={onSeriesPreviewUpdated}
               href={buildSeriesUrl?.(hoverPreview.item)}
               onSelectSeries={onSelectSeries}
               onSelectStudio={onSelectStudio}

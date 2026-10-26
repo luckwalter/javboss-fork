@@ -12,6 +12,7 @@ import PlayerSettingsModal from '@/features/settings/components/PlayerSettingsMo
 import WebHotkeySettings from '@/features/settings/components/WebHotkeySettings'
 import ProviderAvailabilityPanel from '@/features/settings/components/ProviderAvailabilityPanel'
 import ResourceDashboard from '@/features/settings/components/ResourceDashboard'
+import TitleTranslationToolSettings from '@/features/settings/components/TitleTranslationToolSettings'
 import { downloadFFmpeg, fetchTools } from '@/features/settings/api'
 import { parsePlayerHotkeys } from '@/utils/playerHotkeys'
 import { zh } from '@/utils/i18n'
@@ -37,6 +38,14 @@ const SETTINGS_SECTIONS = [
     id: 'jav-providers',
     title: { zh: 'JAV 数据源', en: 'JAV Providers' },
     summary: { zh: '数据源域名与可用性检测', en: 'Provider domains and availability checks' },
+  },
+  {
+    id: 'ai-translation',
+    title: { zh: 'AI 翻译', en: 'AI Translation' },
+    summary: {
+      zh: '自动翻译、服务商配置与批量任务',
+      en: 'Automatic translation, provider configuration and batch tasks',
+    },
   },
   {
     id: 'tools',
@@ -1519,8 +1528,12 @@ export default function GlobalSettingsModal({
         </aside>
 
         <section
-          className={`min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4 md:px-6 md:pb-6 ${
-            currentSection === 'directories' ? 'md:pt-3' : 'md:pt-6'
+          className={`min-h-0 flex-1 overflow-y-auto px-4 pb-4 md:px-6 md:pb-6 ${
+            currentSection === 'ai-translation'
+              ? 'pt-2 md:pt-2'
+              : currentSection === 'directories'
+                ? 'pt-4 md:pt-3'
+                : 'pt-4 md:pt-6'
           }`}
         >
           {currentSection === 'display' && renderDisplayPanel()}
@@ -1532,6 +1545,7 @@ export default function GlobalSettingsModal({
               disabled={proxyEditing || savingProxy}
             />
           )}
+          {currentSection === 'ai-translation' && <TitleTranslationToolSettings />}
           {currentSection === 'tools' && renderToolsPanel()}
           {currentSection === 'player' && renderPlayerPanel()}
           {currentSection === 'directories' && renderDirectoriesPanel()}

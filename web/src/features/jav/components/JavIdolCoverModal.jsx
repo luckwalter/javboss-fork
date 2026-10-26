@@ -1,3 +1,4 @@
+import { preferChineseTitle } from '@/features/jav/titleTranslation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined'
 import ImageRoundedIcon from '@mui/icons-material/ImageRounded'
@@ -6,16 +7,14 @@ import SaveRoundedIcon from '@mui/icons-material/SaveRounded'
 import { fetchJavIdolCoverOptions, updateJavIdolCover } from '@/features/jav/api'
 import AppModal from '@/shared/ui/AppModal'
 import { getJavDisplayTitle } from '@/utils/jav'
+import { useStore } from '@/store'
 import { zh } from '@/utils/i18n'
 import { getErrorMessage } from '@/utils/errors'
 import { getIdolDisplayName } from '@/utils/javIdol'
+import { COVER_VISIBLE_RATIO, PORTRAIT_COVER_ASPECT } from '@/features/jav/coverCrop'
 
-export const IDOL_COVER_VISIBLE_RATIO = 0.47
+export const IDOL_COVER_VISIBLE_RATIO = COVER_VISIBLE_RATIO
 export const IDOL_COVER_DEFAULT_CROP_LEFT = 1 - IDOL_COVER_VISIBLE_RATIO
-const IDOL_COVER_SOURCE_WIDTH = 800
-const IDOL_COVER_SOURCE_HEIGHT = 538
-const IDOL_COVER_FRAME_ASPECT =
-  (IDOL_COVER_SOURCE_WIDTH * IDOL_COVER_VISIBLE_RATIO) / IDOL_COVER_SOURCE_HEIGHT
 
 export function normalizeIdolCoverCropLeft(value) {
   const parsed = Number(value)
@@ -36,7 +35,7 @@ function getCoverVisibleRatio(size) {
   }
   const imageAspect = imageWidth / imageHeight
   if (imageAspect <= 0) return IDOL_COVER_VISIBLE_RATIO
-  return Math.min(1, IDOL_COVER_FRAME_ASPECT / imageAspect)
+  return Math.min(1, PORTRAIT_COVER_ASPECT / imageAspect)
 }
 
 function normalizeDynamicCropLeft(value, maxCropLeft) {
@@ -117,7 +116,8 @@ export default function JavIdolCoverModal({
   )
   const previewCode = String(selectedOption?.code || itemCoverCode).trim()
   const coverSrc = previewCode ? `/jav/${encodeURIComponent(previewCode)}/cover` : ''
-  const title = selectedOption ? getJavDisplayTitle(selectedOption) : ''
+  const translateTitle = useStore((state) => preferChineseTitle(state.config))
+  const title = selectedOption ? getJavDisplayTitle(selectedOption, translateTitle) : ''
   const visibleRatio = getCoverVisibleRatio(imageSize)
   const maxCropLeft = Math.max(0, 1 - visibleRatio)
   const displayCropLeft = Math.min(cropLeft, maxCropLeft)
@@ -215,7 +215,7 @@ export default function JavIdolCoverModal({
           ) : options.length > 0 ? (
             options.map((option) => {
               const active = Number(option.id) === Number(selectedJavId)
-              const optionTitle = getJavDisplayTitle(option)
+              const optionTitle = getJavDisplayTitle(option, translateTitle)
               return (
                 <button
                   key={option.id}

@@ -84,7 +84,7 @@ jobs:
         run: go test -count=1 -timeout=2m -ldflags="-H windowsgui" ./internal/util ./internal/mpv -run 'Background|PlayerProcessHelper|PlayerManager|WindowsPlayerJob'
 
       - name: Test HTTP shutdown and error cleanup from a GUI process
-        run: go test -count=1 -timeout=2m -ldflags="-H windowsgui" ./internal/server ./cmd/server -run '^Test(HTTPShutdownEndsWatchedTimeStreams|RunClientErrorCleansUpPlayers)$'
+        run: go test -count=1 -timeout=2m -ldflags="-H windowsgui" ./internal/api ./cmd/server -run '^Test(HTTPShutdownEndsWatchedTimeStreams|RunClientErrorCleansUpPlayers)$'
 
   frontend:
     name: Frontend checks
@@ -124,7 +124,7 @@ jobs:
 
       - name: Test frontend, including browser tests
         # Avoid starting several Chrome/Vite instances at once on the runner.
-        run: npm test -- --test-concurrency=1
+        run: npm test -- --test-concurrency=1 --test-reporter=tap
 
       - name: Build frontend
         run: npm run build

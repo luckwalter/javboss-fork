@@ -11,15 +11,9 @@ test(
     timeout: 60000,
   },
   async (t) => {
-    const { origin, command, evaluate, waitFor } = await openBrowser(t, {
+    const { origin, command, evaluate, waitFor, reloadPage } = await openBrowser(t, {
       cacheDir: 'node_modules/.vite-studio-history-test',
     })
-    const reloadPage = async () => {
-      const previousTimeOrigin = await evaluate('performance.timeOrigin')
-      await command('Page.reload')
-      // The CDP reply can arrive while the previous document is still visible.
-      await waitFor(`performance.timeOrigin !== ${previousTimeOrigin}`)
-    }
     const modal = `document.querySelector('[role="dialog"][aria-label="片商详情"], [role="dialog"][aria-label="Studio details"]')`
     const loaded = `${modal}?.querySelectorAll('section').length === 2`
     const scroll = `${modal}.querySelector('.overflow-y-auto')`
@@ -77,7 +71,9 @@ test(
     await reloadPage()
     await waitFor(loaded)
     assert.equal(await evaluate(`${scroll}.scrollTop`), 350)
-    await evaluate(`${modal}.querySelector('section:nth-child(2) a button').click()`)
+    await evaluate(
+      `${modal}.querySelector('[aria-label="加入系列收藏夹"], [aria-label="Add to series favorite groups"]').click()`
+    )
     await waitFor(`document.querySelectorAll('[role="dialog"]').length === 2`)
     await evaluate(
       `document.querySelector('[aria-label="关闭收藏夹选择"], [aria-label="Close favorite group picker"]').click()`

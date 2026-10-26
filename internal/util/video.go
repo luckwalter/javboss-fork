@@ -18,7 +18,7 @@ import (
 
 	"github.com/h2non/filetype"
 
-	"javboss/internal/runtimeconfig"
+	"javboss/internal/common"
 )
 
 type VideoMetadata struct {
@@ -298,7 +298,7 @@ func findFFBinaryPath(name string) (string, error) {
 }
 
 func findFFBinaryPathWithLookup(name string, lookup func(string) (string, error)) (string, error) {
-	if runtimeconfig.ContainerMode() {
+	if common.ContainerMode() {
 		// 容器内按优先级回退，而不是只认一个硬编码路径。
 		// 背景：官方镜像布局随版本变过（v2.1.0 → /usr/local/bin，v2.1.1 起 → /app/internal/bin），
 		// 单点硬编码会让「二进制与镜像底座版本不一致」直接导致播放整体失效，
@@ -325,8 +325,8 @@ func findFFBinaryPathWithLookup(name string, lookup func(string) (string, error)
 		}
 		return "", fmt.Errorf("%w: %s not found in container (tried: %s)",
 			ErrFFToolMissing, name, strings.Join(tried, ", "))
-	}
 
+	}
 	var candidates []string
 
 	binName := name
@@ -595,3 +595,6 @@ func detectContainer(formatName, path string) string {
 	}
 	return normalizeFormatName(formatName)
 }
+
+
+

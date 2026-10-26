@@ -1,3 +1,4 @@
+import { getSeriesDisplayName, preferChineseSeries } from '@/features/jav/titleTranslation'
 import { useStore } from '@/store'
 import { useShallow } from 'zustand/react/shallow'
 import { createDefaultIdolProfileFilters } from '@/constants/jav'
@@ -5,8 +6,7 @@ import { useCallback } from 'react'
 
 export default function useSectionNavigation({
   setTagModalOpen,
-  setVideoSettingsOpen,
-  setJavSettingsOpen,
+  setDisplaySettingsTab,
   setGlobalSettingsOpen,
   isJavMode,
   setJavSearchInput,
@@ -25,8 +25,7 @@ export default function useSectionNavigation({
   )
   const handleHomeClick = () => {
     setTagModalOpen(false)
-    setVideoSettingsOpen(false)
-    setJavSettingsOpen(false)
+    setDisplaySettingsTab(null)
     setGlobalSettingsOpen(false)
     if (isJavMode) {
       const updates = {
@@ -241,7 +240,7 @@ export default function useSectionNavigation({
       javStudioId: null,
       javStudioName: '',
       javSeriesId: id,
-      javSeriesName: String(series?.name || '').trim(),
+      javSeriesName: getSeriesDisplayName(series, preferChineseSeries(useStore.getState().config)),
       javPrefix: '',
       javSoloOnly: false,
       javFavoriteRatingEnabled: false,
