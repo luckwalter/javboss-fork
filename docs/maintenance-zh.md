@@ -16,16 +16,16 @@ fork 自己的提交见 `git log` 里的 `[FORK]` 前缀。
 | `internal/db/migrations/209901010001_add_jav_idol_avatar.go` | jav_idol 加 `avatar_code`/`avatar_file` 两列 + 索引（**2099 保留号段**，见 §5.1） |
 | `internal/models/jav.go` | 对应两个 GORM 字段 |
 | `internal/db/jav.go` | idol 查询 SELECT 加 `COALESCE(ji.avatar_code, ...)`，Group 同步 |
-| `internal/server/jav_cover_api.go` | `lookupIdolAvatarFile`：`/jav/<idol>/cover` 优先返回独立头像文件 |
-| `internal/server/jav_idol_api.go` | `hasIdolAvatarFile`：已有独立头像时防作品封面覆盖 |
+| `internal/api/jav_cover_api.go` | `lookupIdolAvatarFile`：`/jav/<idol>/cover` 优先返回独立头像文件 |
+| `internal/api/jav_idol_api.go` | `hasIdolAvatarFile`：已有独立头像时防作品封面覆盖 |
 
 **B. 容器模式播放探测修复**（对应 issue #1 / #2）
 
 | 文件 | 改动 |
 |---|---|
 | `internal/util/video.go` | ffprobe/ffmpeg **候选链回退**；新增 `ErrFFToolMissing` 哨兵错误；仅成功时缓存 |
-| `internal/server/video_api.go` | 「工具缺失」改报 **503** 而非误导性的 404 |
-| `internal/manager/ffmpeg_tool_manager.go` | 工具路径解析同步候选链 |
+| `internal/api/video_api.go` | 「工具缺失」改报 **503** 而非误导性的 404 |
+| `internal/ffmpeg/installer.go` | 工具路径解析同步候选链 |
 | `internal/util/video_test.go` | 上述行为的单元测试 |
 
 **C. 迁移入口加固**
@@ -94,7 +94,7 @@ git merge upstream/main                       # 预期零冲突（fork 仅 10 �
 > `WithAllowMissing()` 还在（它是 2099 号段能正常工作的前提，见 §5.1）。
 
 冲突检查重点：`internal/db/jav.go`（官方若改 idol 查询的 SELECT/Group 需手工合入 COALESCE）、`jav_cover_api.go` / `jav_idol_api.go`（官方若重写这两个接口需重放 lookupIdolAvatarFile/hasIdolAvatarFile）、
-`internal/util/video.go` / `internal/server/video_api.go`（官方若改播放探测或错误分类，需重放候选链回退与 `ErrFFToolMissing` 503 分类）。
+`internal/util/video.go` / `internal/api/video_api.go`（官方若改播放探测或错误分类，需重放候选链回退与 `ErrFFToolMissing` 503 分类）。
 
 ### 5.1 ⚠️ 迁移版本号：fork 用 `2099` 号段 + `WithAllowMissing`（必须成对）
 
@@ -193,7 +193,7 @@ DELETE FROM goose_db_version WHERE version_id = 202610040001;
 
 ## 8. 样品图排障（2026-10-06 实战沉淀）
 
-- **渲染机制**：前端 `JavSampleImageGrid` 不用 DB 原始 URL，只按元素个数生成 `/jav/items/<id>/sample-images/<idx>/thumbnail|detail`，由后端 `getJavSampleImage`（`internal/server/jav_sample_image_api.go`）代抓并 `Cache-Control: private, max-age=86400`。→ **破图充要条件 = NAS 后端抓不到源 URL（返 502）**；排查只看 NAS 侧连通性，别被浏览器行为带偏。
+- **渲染机制**：前端 `JavSampleImageGrid` 不用 DB 原始 URL，只按元素个数生成 `/jav/items/<id>/sample-images/<idx>/thumbnail|detail`，由后端 `getJavSampleImage`（`internal/api/jav_sample_image_api.go`）代抓并 `Cache-Control: private, max-age=86400`。→ **破图充要条件 = NAS 后端抓不到源 URL（返 502）**；排查只看 NAS 侧连通性，别被浏览器行为带偏。
 - **图床可用性（NAS 视角）**：`pics.dmm.co.jp` / `awsimgsrc.dmm.co.jp` / `image.mgstage.com` ✅；`c0.jdbstatic.com`（javdb 图床）/ `www.javbus.com/pics` ❌（CF 挡 NAS 直连与代理两条路，DNS/TLS 正常但拿不到响应）。
 - **DMM 占位图判别（关键）**：无图 URL 返回 **302 → `now_printing`**，有图直接 200。占位图是合法 image，能骗过 `resolveJavSampleImages` 的验证 → 全库排查法：对每作品第一张 URL 测状态码（不跟随重定向），非 200 的作品其样图全为占位，`sample_images` 置空即可（前端不渲染该区块）。工具：`check_noimage.py`（10 线程全库约 4 分钟）；`code=0` 要重试 3 次再判死（可能是网络抖动）。
 - **修图流程**：① 备份 DB ② 清空问题作品 `sample_images` ③ `POST /jav/items/<id>/sample-images` 触发重刮（provider 顺序 JavMenu→JavBus，**写回前会在 NAS 实测下载 detail 验证**，所以重刮回来的 detail 天然可达）④ 跑 `fix_sample_thumbs.py` 把 thumbnail 对齐 detail ⑤ 终扫 + 代理路由抽样。

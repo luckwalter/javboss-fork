@@ -28,7 +28,8 @@
 
 | fork 镜像 tag | 发布日期 | 底座 | 二进制源码（上游基线） | 状态 |
 |---|---|---|---|---|
-| `2.2.2` | 2026-10-13 | 官方 Dockerfile 四段式全量构建 | fork `dc0afbc`（合并上游 `main e7c5834` = v2.1.2） | ✅ 当前生产 |
+| `2.2.3` | 2026-10-26 | 官方 Dockerfile 四段式全量构建 | fork `50a3746`（合并上游 `main 0eabaf0` = v2.1.3） | 本地已构建，待部署 NAS |
+| `2.2.2` | 2026-10-13 | 官方 Dockerfile 四段式全量构建 | fork `dc0afbc`（合并上游 `main e7c5834` = v2.1.2） | 当前 NAS 生产（将被 2.2.3 取代） |
 | `2.2.1` | 2026-10-06 | `javboss-fork:2.2.0`（增量 COPY） | fork `91ad357` ← 上游 `main 5aa89f3` | 已被 2.2.2 取代 |
 | `2.2.0` | 2026-10-06 | 官方 Dockerfile 四段式全量构建 | fork `b413ed0`（合并上游 main `5aa89f3`） | ⚠️ 未留产线（启动 Fatal，见下） |
 | `2.1.3` | 2026-10-06 | `javboss-fork:2.1.2`（增量 COPY） | fork `ad880f4` ← 上游 v2.1.1 `fde33e4` | 已被 2.2.1 取代 |
@@ -40,6 +41,36 @@
 > 二进制实际是 v2.1.1 源码 + 头像补丁，底座却是官方 v2.1.0 —— 这种「底座≠源码」的错位正是
 > [issue #1](https://github.com/luckwalter/javboss-fork/issues/1) 播放全线 404 的根因，
 > 也是 §9「底座必须与二进制源码同版本」这条铁律的由来。
+
+---
+
+## 2.2.3 — 2026-10-26（本地已构建，待部署 NAS）
+
+**源码**：fork `50a3746`（merge 上游 `main 0eabaf0`，即上游 Release **v2.1.3**）｜**构建**：官方 `Dockerfile` 四段式**全量**构建（node 前端 → golang 后端 → alpine 静态 ffmpeg → distroless，216 MB；`APP_VERSION=2.2.3` 经 ldflags 注入）
+
+### 新增（随上游 v2.1.3 合入，7 个提交 #383–#414）
+
+- **#403 后端结构重组**：`internal/server/*` 整体重命名为 `internal/api/*`，`internal/manager/*` 重组为 `internal/jav/scrape/cover` 等；`runtimeconfig` 包并入 `internal/common`（`runtimeconfig.ContainerMode()` → `common.ContainerMode()`）。
+- **#383 / #402 / #411 / #412 / #413 / #414**：标题与界面翻译、竖屏适配、UX 调整、CI 工作流、版本号升至 v2.1.3 等。
+- 全量构建原因同 2.2.2：上游改动含前端（web 大量改动），增量 `COPY` 二进制会漏掉前端产物。
+
+### 冲突解决（merge 共 4 处，均已保留 fork 自定义）
+
+- `internal/util/video.go`：**保留 fork 的 ffprobe/ffmpeg 多候选回退逻辑**（env → 当前镜像布局 → 历史镜像布局 → PATH），仅把 `runtimeconfig.ContainerMode()` 改为 `common.ContainerMode()`；并修复冲突合并时 `if common.ContainerMode()` 大 if 被过早关闭、候选链掉到 if 外引用未声明变量的结构错误。
+- `internal/api/jav_cover_api.go`：**保留 fork 女优独立头像优先**（`lookupIdolAvatarFile` / `hasIdolAvatarFile`）；把 `manager.FindCoverPath` 改为 `cover.FindPath(cfg.JavCoverDir, code)`，`common.AppConfig` / `common.DB` 改为 `common.CurrentConfig()` / `db.Default().DB()`（为此给 `db.Store` 新增公开的 `DB() *gorm.DB` 访问器）。
+- `internal/db/jav.go`：保留 fork 的 `COALESCE(ji.avatar_code, NULLIF(cover_jav.code,''), solo_idols.cover_code)` 头像优先逻辑；`buildVisibleIdolWorkCountQuery` / `buildVisibleSoloIdolCoverQuery` 随上游改为 `Store` 方法，调用处加 `store.` 前缀。
+- `README.md`：以 fork 版本为主体，仅同步上游新增的翻译/竖屏/UX 章节，**不引入**上游「方式二/方式三」部署章节。
+
+### 说明
+
+- 本次属「跟上游升级」，非 fork 功能新增：fork 图像增强主线（女优头像 / 厂牌高清艺术照 / 样品图修复 / 播放修复）**不受影响**，fork 补丁全部保留。
+- 迁移铁律不变：`2099` 号段 + `goose.WithAllowMissing()` 成对约束。
+- **本地编译曾现假阴性**：`golang:1.26-alpine` 默认 `CGO_ENABLED=0` 且无 gcc，cgo-only 的 `go-sqlite3` 整体被排除、`*sqlite.SQLiteConn` 类型未定义、误报 `conn.Exec undefined`；改用官方 `golang:1.25-bookworm`（CGO 开、带 gcc）全量 `docker build` 即通过。
+
+### 验证（阶段一·本地）
+
+- **全量 `docker build`**：四段全部通过（前端 11892 模块 / ffmpeg sha256 校验 / 后端 `go build ./cmd/server` exit 0 / distroless 组装），产出 `javboss-fork:2.2.3` + `:latest`。
+- 阶段二（部署 NAS）待主人确认后由 `11_deploy_fork_image.py` 执行，并对照 2.2.2 的 2235/2235 全量验证可播数。
 
 ---
 

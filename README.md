@@ -74,7 +74,7 @@
 1. **迁移** `internal/db/migrations/209901010001_add_jav_idol_avatar.go` — 加列 + 建索引（fork 迁移统一放在 `2099` 保留号段，与上游的日期号段彻底隔离，见 [第 5 节](#5-跟官方升级)）；
 2. **模型** `internal/models/jav.go` — `JavIdol` 加 `AvatarCode` / `AvatarFile` 字段；
 3. **查询** `internal/db/jav.go` — 女优列表两处 SELECT 改用 `COALESCE(ji.avatar_code, …)`，让虚拟码优先于作品番号；
-4. **路由** `internal/server/jav_cover_api.go` + `jav_idol_api.go` — `lookupIdolAvatarFile()` 命中独立头像就直接返回文件（排在作品封面查找**之前**），`hasIdolAvatarFile()` 则拦住刮削回填。
+4. **路由** `internal/api/jav_cover_api.go` + `internal/api/jav_idol_api.go` — `lookupIdolAvatarFile()` 命中独立头像就直接返回文件（排在作品封面查找**之前**），`hasIdolAvatarFile()` 则拦住刮削回填。
 
 **数据现状**：1456 位演员中 **1288 人**已有头像（Gfriends 素材库 1254 张 + 厂牌官网高清艺术照新增 34 张），其中 **392 张**由 Gfriends 升级为厂牌官方艺术照；素材目录 `data/gfriends_avatars/`，约 170 MB。
 
@@ -126,7 +126,7 @@
 | **修复 C** | `sync.Once` 缓存失败结果 → 改为**仅缓存成功**，失败下次重试 |
 
 > 修复提交：`ad880f4`（源码）+ `6a1b216`（文档）——即镜像 **`javboss-fork:2.1.3` 起生效**。
-> 镜像版本沿革：`2.1.3`（修复落地）→ `2.2.0`（合并上游 `main` `5aa89f3`）→ `2.2.1`（迁移入口加 `WithAllowMissing`）→ **`2.2.2`**（合并上游 `main e7c5834` = v2.1.2，当前基线）。
+> 镜像版本沿革：`2.1.3`（修复落地）→ `2.2.0`（合并上游 `main` `5aa89f3`）→ `2.2.1`（迁移入口加 `WithAllowMissing`）→ `2.2.2`（合并上游 `main e7c5834` = v2.1.2）→ **`2.2.3`**（合并上游 `main 0eabaf0` = v2.1.3，当前基线）。
 > 已在 NAS 上跑过全量验证：**2243 / 2243 个视频可播、0 异常**。
 > 未修复的历史镜像（≤ v2.1.2）仍可用工具链里的 `8_fix_ffprobe.py` 做运行时规避。
 
@@ -217,12 +217,12 @@ export NAS_PASS='<NAS SSH 密码>'       # 必填，不写进任何文件
 ```bash
 # 1) 全量构建（用仓库根目录自带的官方 Dockerfile，四段式）
 #    node 构建前端 → golang 构建后端 → 下载静态 ffmpeg/ffprobe → distroless 底座
-docker build -t javboss-fork:2.2.2 .
+docker build -t javboss-fork:2.2.3 .
 #    走这条路前端会跟着上游一起更新，且不存在「底座版本 ≠ 源码版本」的耦合
 
 # 2) 推到 NAS 并按现读配置重建容器（自动备份 DB、按需清理迁移残留行）
 export NAS_PASS='<NAS SSH 密码>'
-python3 scripts/maintenance/11_deploy_fork_image.py --image javboss-fork:2.2.2
+python3 scripts/maintenance/11_deploy_fork_image.py --image javboss-fork:2.2.3
 
 # 3) 全量验证「每个视频都能播」
 python3 scripts/maintenance/9_verify_playback.py --deep
@@ -260,7 +260,7 @@ git merge upstream/main                                          # 预期零冲�
 **冲突检查重点**（只有这几处可能被官方改写）：
 `internal/db/jav.go`（若官方改了女优查询的 SELECT / Group，需手工合入 `COALESCE`）、
 `jav_cover_api.go` 与 `jav_idol_api.go`（若官方重写这两个接口，需重放 `lookupIdolAvatarFile` / `hasIdolAvatarFile`）、
-`internal/util/video.go` 与 `internal/server/video_api.go`（若官方改播放探测/错误分类，需重放候选链回退与 `ErrFFToolMissing` 503 分类）。
+`internal/util/video.go` 与 `internal/api/video_api.go`（若官方改播放探测/错误分类，需重放候选链回退与 `ErrFFToolMissing` 503 分类）。
 迁移文件是**新增文件**，不会冲突。
 
 ### 5.1 迁移版本号的坑：fork 用 `2099` 号段 + `WithAllowMissing`
